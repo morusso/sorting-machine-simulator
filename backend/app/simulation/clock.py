@@ -1,26 +1,34 @@
 class Clock:
-    """Tracks simulation time, distinct from real (wall-clock) time.
-
-    A speed_multiplier greater than 1.0 lets simulation time advance
-    faster than real time, so tests can run many cycles quickly.
-
-    Attributes:
-        speed_multiplier: Ratio of simulated seconds to real seconds
-            (e.g. 10.0 means 1 real second equals 10 simulated seconds).
-    """
 
     def __init__(self, speed_multiplier: float = 1.0):
-        """Initialize the clock.
 
-        Args:
-            speed_multiplier: Ratio of simulated seconds to real seconds.
-        """
         self.speed_multiplier = speed_multiplier
+        self._elapsed = 0.0
+        self._paused = False
 
     def now(self) -> float:
-        """Return the current simulation time.
 
-        Returns:
-            The current simulation time, in seconds.
-        """
-        raise NotImplementedError
+        return self._elapsed
+
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
+    def advance(self, real_dt: float) -> None:
+
+        if real_dt < 0:
+            raise ValueError("real_dt must be non-negative")
+        if self._paused:
+            return
+        self._elapsed += real_dt * self.speed_multiplier
+
+    def pause(self) -> None:
+        self._paused = True
+
+    def resume(self) -> None:
+        self._paused = False
+
+    def reset(self) -> None:
+
+        self._elapsed = 0.0
+        self._paused = False

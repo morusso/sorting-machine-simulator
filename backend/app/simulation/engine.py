@@ -1,28 +1,50 @@
-class SimulationEngine:
-    """Coordinates the clock and all simulated components.
+from enum import Enum
 
-    The engine is the central element of the simulation: it drives the
-    Clock and steps the conveyor, scanner, encoder, sensors, gates, and
-    controller in sync, and exposes start/pause/resume/stop/reset controls
-    plus adjustable simulation speed.
-    """
+from app.simulation.clock import Clock
+
+
+class EngineState(str, Enum):
+    STOPPED = "STOPPED"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+
+
+class SimulationEngine:
+
+    def __init__(self, clock: Clock | None = None):
+
+        self.clock = clock if clock is not None else Clock()
+        self.state = EngineState.STOPPED
 
     def start(self):
-        """Start the simulation from its current (or initial) state."""
-        raise NotImplementedError
+
+        if self.state != EngineState.STOPPED:
+            raise RuntimeError(f"cannot start engine from state {self.state}")
+        self.clock.resume()
+        self.state = EngineState.RUNNING
 
     def pause(self):
-        """Pause the simulation, preserving current state."""
-        raise NotImplementedError
+
+        if self.state != EngineState.RUNNING:
+            raise RuntimeError(f"cannot pause engine from state {self.state}")
+        self.clock.pause()
+        self.state = EngineState.PAUSED
 
     def resume(self):
-        """Resume a previously paused simulation."""
-        raise NotImplementedError
+
+        if self.state != EngineState.PAUSED:
+            raise RuntimeError(f"cannot resume engine from state {self.state}")
+        self.clock.resume()
+        self.state = EngineState.RUNNING
 
     def stop(self):
-        """Stop the simulation."""
-        raise NotImplementedError
+
+        if self.state == EngineState.STOPPED:
+            raise RuntimeError(f"cannot stop engine from state {self.state}")
+        self.clock.pause()
+        self.state = EngineState.STOPPED
 
     def reset(self):
-        """Reset the simulation to its initial state."""
-        raise NotImplementedError
+
+        self.clock.reset()
+        self.state = EngineState.STOPPED
