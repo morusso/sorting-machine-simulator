@@ -88,3 +88,85 @@ def test_engine_accepts_injected_clock():
     clock = Clock(speed_multiplier=2.0)
     engine = SimulationEngine(clock=clock)
     assert engine.clock is clock
+
+
+def test_tick_while_stopped_advances_nothing():
+    engine = SimulationEngine()
+    sim_dt = engine.tick(1.0)
+    assert sim_dt == 0.0
+    assert engine.clock.now() == 0.0
+
+
+def test_tick_while_running_advances_clock_by_real_dt():
+    engine = SimulationEngine()
+    engine.start()
+    sim_dt = engine.tick(1.0)
+    assert sim_dt == pytest.approx(1.0)
+    assert engine.clock.now() == pytest.approx(1.0)
+
+
+def test_tick_scales_by_clock_speed_multiplier():
+    from app.simulation.clock import Clock
+
+    engine = SimulationEngine(clock=Clock(speed_multiplier=10.0))
+    engine.start()
+    sim_dt = engine.tick(1.0)
+    assert sim_dt == pytest.approx(10.0)
+
+
+def test_tick_while_paused_advances_nothing():
+    engine = SimulationEngine()
+    engine.start()
+    engine.pause()
+    sim_dt = engine.tick(5.0)
+    assert sim_dt == 0.0
+    assert engine.clock.now() == 0.0
+
+
+@pytest.mark.asyncio
+async def test_tick_advances_registered_segment():
+    from app.domain.conveyor import DrivenConveyorSegment
+
+    segment = DrivenConveyorSegment(length=20.0, speed=1.0, max_speed=2.0, acceleration=0.5)
+    segment.add_package("PKG-1", position=0.0)
+    engine = SimulationEngine()
+    engine.add_segment(segment)
+    engine.start()
+    engine.tick(2.0)
+    assert await segment.get_package_position("PKG-1") == pytest.approx(2.0)
+
+
+@pytest.mark.asyncio
+async def test_tick_does_not_advance_segments_while_stopped():
+    from app.domain.conveyor import DrivenConveyorSegment
+
+    segment = DrivenConveyorSegment(length=20.0, speed=1.0, max_speed=2.0, acceleration=0.5)
+    segment.add_package("PKG-1", position=0.0)
+    engine = SimulationEngine()
+    engine.add_segment(segment)
+    engine.tick(5.0)
+    assert await segment.get_package_position("PKG-1") == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_tick_advances_multiple_registered_segments():
+    from app.domain.conveyor import DrivenConveyorSegment
+
+    segment_a = DrivenConveyorSegment(length=20.0, speed=1.0, max_speed=2.0, acceleration=0.5)
+    segment_b = DrivenConveyorSegment(length=20.0, speed=2.0, max_speed=2.0, acceleration=0.5)
+    segment_a.add_package("PKG-A", position=0.0)
+    segment_b.add_package("PKG-B", position=0.0)
+    engine = SimulationEngine()
+    engine.add_segment(segment_a)
+    engine.add_segment(segment_b)
+    engine.start()
+    engine.tick(1.0)
+    assert await segment_a.get_package_position("PKG-A") == pytest.approx(1.0)
+    assert await segment_b.get_package_position("PKG-B") == pytest.approx(2.0)
+
+
+def test_tick_with_negative_real_dt_raises():
+    engine = SimulationEngine()
+    engine.start()
+    with pytest.raises(ValueError):
+        engine.tick(-1.0)

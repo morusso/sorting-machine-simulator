@@ -38,6 +38,10 @@ class GravityConveyorSegment(ConveyorSegment):
         roller_diameter: Roller diameter, in meters (roller variant only).
         min_package_weight: Minimum package mass, in kg, below which a
             package may not move at all.
+        stopper_engaged: Whether the segment's mechanical stopper/latch is
+            currently blocking movement (see README section 26: a gravity
+            segment has no motor to disable, so EMERGENCY_STOP must be
+            modeled as this separate mechanism instead).
     """
 
     def __init__(
@@ -48,7 +52,7 @@ class GravityConveyorSegment(ConveyorSegment):
         roller_diameter: float,
         min_package_weight: float,
     ):
-        """Initialize a gravity conveyor segment.
+        """Initialize a gravity conveyor segment, with the stopper released.
 
         Args:
             length: Length of the segment, in meters.
@@ -64,7 +68,24 @@ class GravityConveyorSegment(ConveyorSegment):
         self.friction_coefficient = friction_coefficient
         self.roller_diameter = roller_diameter
         self.min_package_weight = min_package_weight
+        self.stopper_engaged = False
         self._packages: dict[str, _TrackedPackage] = {}
+
+    def engage_stopper(self) -> None:
+        """Engage the mechanical stopper, freezing all packages in place.
+
+        Unlike a driven segment's emergency_stop(), there is no motor to
+        disable here — the stopper is a separate physical mechanism that
+        blocks packages outright, independent of the segment's incline/
+        friction physics (see README section 26).
+        """
+        self.stopper_engaged = True
+        for state in self._packages.values():
+            state.velocity = 0.0
+
+    def release_stopper(self) -> None:
+        """Release the mechanical stopper, letting normal physics resume."""
+        self.stopper_engaged = False
 
     @property
     def acceleration(self) -> float:
@@ -121,6 +142,7 @@ class GravityConveyorSegment(ConveyorSegment):
         stop stays stopped rather than rolling back uphill. A package is
         also prevented from overtaking the package ahead of it on the
         segment, modeling pile-up/accumulation (see README section 4.1a).
+        A no-op while the stopper is engaged (see engage_stopper()).
 
         Args:
             dt: Elapsed simulation time to advance by, in seconds.
@@ -130,6 +152,8 @@ class GravityConveyorSegment(ConveyorSegment):
         """
         if dt < 0:
             raise ValueError("dt must be non-negative")
+        if self.stopper_engaged:
+            return
 
         a = self.acceleration
         ahead_position: float | None = None

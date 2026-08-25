@@ -130,3 +130,37 @@ def test_advance_with_negative_dt_raises():
     segment = make_segment()
     with pytest.raises(ValueError):
         segment.advance(-1.0)
+
+
+def test_starts_with_stopper_released():
+    segment = make_segment()
+    assert segment.stopper_engaged is False
+
+
+@pytest.mark.asyncio
+async def test_engage_stopper_freezes_moving_package_immediately():
+    segment = make_segment(incline_angle=90.0, friction_coefficient=0.0)
+    segment.add_package("PKG-1", weight=1.0, position=0.0, velocity=3.0)
+    segment.engage_stopper()
+    assert await segment.get_package_velocity("PKG-1") == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_advance_is_a_no_op_while_stopper_engaged():
+    segment = make_segment(incline_angle=90.0, friction_coefficient=0.0)
+    segment.add_package("PKG-1", weight=1.0, position=1.0, velocity=0.0)
+    segment.engage_stopper()
+    segment.advance(5.0)
+    assert await segment.get_package_position("PKG-1") == pytest.approx(1.0)
+    assert await segment.get_package_velocity("PKG-1") == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_release_stopper_resumes_normal_physics():
+    segment = make_segment(incline_angle=90.0, friction_coefficient=0.0)
+    segment.add_package("PKG-1", weight=1.0, position=0.0, velocity=0.0)
+    segment.engage_stopper()
+    segment.advance(5.0)
+    segment.release_stopper()
+    segment.advance(1.0)
+    assert await segment.get_package_position("PKG-1") == pytest.approx(0.5 * GRAVITY)
