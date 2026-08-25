@@ -30,6 +30,10 @@ class DrivenConveyorSegment(ConveyorSegment):
         speed: Current belt speed, in m/s.
         max_speed: Maximum belt speed, in m/s.
         acceleration: Belt acceleration, in m/s^2.
+        total_distance: Cumulative distance the belt has moved, in meters.
+            Unlike package position, this is never clamped to the segment
+            length — it reflects actual belt travel and backs the encoder's
+            pulse count (see SimulatedEncoder).
     """
 
     def __init__(self, length: float, speed: float, max_speed: float, acceleration: float):
@@ -45,6 +49,7 @@ class DrivenConveyorSegment(ConveyorSegment):
         self.speed = speed
         self.max_speed = max_speed
         self.acceleration = acceleration
+        self.total_distance = 0.0
         self._positions: dict[str, float] = {}
 
     def add_package(self, package_id: str, position: float = 0.0) -> None:
@@ -84,6 +89,7 @@ class DrivenConveyorSegment(ConveyorSegment):
         if dt < 0:
             raise ValueError("dt must be non-negative")
         distance = self.speed * dt
+        self.total_distance += distance
         for package_id, position in self._positions.items():
             self._positions[package_id] = min(position + distance, self.length)
 
