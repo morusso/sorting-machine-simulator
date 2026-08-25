@@ -76,3 +76,77 @@ def test_advance_with_negative_dt_raises():
     segment = make_segment()
     with pytest.raises(ValueError):
         segment.advance(-1.0)
+
+
+def test_direct_speed_assignment_updates_target_speed():
+    segment = make_segment(speed=1.0)
+    segment.speed = 2.0
+    assert segment.target_speed == 2.0
+
+
+def test_set_speed_ramps_gradually_rather_than_jumping():
+    segment = make_segment(speed=0.0, max_speed=2.0, acceleration=0.5)
+    segment.set_speed(2.0)
+    segment.advance(1.0)
+    assert segment.speed == pytest.approx(0.5)
+    segment.advance(1.0)
+    assert segment.speed == pytest.approx(1.0)
+
+
+def test_set_speed_does_not_overshoot_target():
+    segment = make_segment(speed=1.0, max_speed=2.0, acceleration=0.5)
+    segment.set_speed(2.0)
+    segment.advance(10.0)
+    assert segment.speed == pytest.approx(2.0)
+
+
+def test_set_speed_brakes_gradually_rather_than_jumping():
+    segment = make_segment(speed=2.0, max_speed=2.0, acceleration=0.5)
+    segment.set_speed(0.0)
+    segment.advance(1.0)
+    assert segment.speed == pytest.approx(1.5)
+
+
+def test_set_speed_braking_does_not_undershoot_target():
+    segment = make_segment(speed=1.5, max_speed=2.0, acceleration=0.5)
+    segment.set_speed(0.0)
+    segment.advance(10.0)
+    assert segment.speed == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_package_position_reflects_average_speed_during_ramp():
+    segment = make_segment(speed=0.0, max_speed=2.0, acceleration=0.5)
+    segment.add_package("PKG-1", position=0.0)
+    segment.set_speed(2.0)
+    segment.advance(1.0)
+    # Speed ramps 0.0 -> 0.5 over this step; distance uses the average.
+    assert await segment.get_package_position("PKG-1") == pytest.approx(0.25)
+
+
+def test_set_speed_above_max_speed_raises():
+    segment = make_segment(max_speed=2.0)
+    with pytest.raises(ValueError):
+        segment.set_speed(3.0)
+
+
+def test_set_speed_negative_raises():
+    segment = make_segment()
+    with pytest.raises(ValueError):
+        segment.set_speed(-1.0)
+
+
+def test_emergency_stop_halts_immediately():
+    segment = make_segment(speed=2.0, max_speed=2.0, acceleration=0.5)
+    segment.emergency_stop()
+    assert segment.speed == 0.0
+    assert segment.target_speed == 0.0
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_prevents_further_movement():
+    segment = make_segment(speed=1.0)
+    segment.add_package("PKG-1", position=0.0)
+    segment.emergency_stop()
+    segment.advance(5.0)
+    assert await segment.get_package_position("PKG-1") == pytest.approx(0.0)
