@@ -7,10 +7,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes import router as rest_router
-from app.api.state import SimulationState
 from app.api.websocket import ConnectionManager
 from app.api.websocket import broadcast_state
 from app.api.websocket import router as websocket_router
+from app.simulation.sorting_line import SortingLine
 
 TICK_INTERVAL_S = 0.1
 """How often the background loop advances the simulation and broadcasts
@@ -28,7 +28,7 @@ async def _simulation_loop(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Wire up simulation state and start/stop the background tick loop."""
-    app.state.simulation = SimulationState()
+    app.state.simulation = SortingLine()
     app.state.connection_manager = ConnectionManager()
     task = asyncio.create_task(_simulation_loop(app))
     try:

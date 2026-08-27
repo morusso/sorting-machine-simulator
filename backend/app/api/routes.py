@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.api.state import SimulationState
 from app.domain.package import Package
 from app.simulation.engine import EngineState
+from app.simulation.sorting_line import SortingLine
 
 router = APIRouter()
 
@@ -34,8 +34,8 @@ class ConveyorStatusResponse(BaseModel):
     target_speed: float
 
 
-def _state(request: Request) -> SimulationState:
-    """Fetch the shared SimulationState stashed on the app by main.py."""
+def _state(request: Request) -> SortingLine:
+    """Fetch the shared SortingLine stashed on the app by main.py."""
     return request.app.state.simulation
 
 
@@ -76,7 +76,7 @@ async def stop_simulation(request: Request) -> SimulationStatusResponse:
 
 @router.post("/api/simulation/reset", response_model=SimulationStatusResponse)
 async def reset_simulation(request: Request) -> SimulationStatusResponse:
-    """Reset the simulation to a fresh, empty state (see SimulationState.reset())."""
+    """Reset the simulation to a fresh, empty state (see SortingLine.reset())."""
     state = _state(request)
     state.reset()
     return SimulationStatusResponse(state=state.engine.state, time=state.clock.now())

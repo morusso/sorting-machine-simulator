@@ -123,6 +123,21 @@ async def test_update_package_position_opens_gate_within_lead_distance():
 
 
 @pytest.mark.asyncio
+async def test_update_package_position_marks_error_when_gate_fails_to_open():
+    controller, gate, _ = make_controller(gate_lead_distance=0.3)
+    await gate.open()
+    gate.simulate_error()
+    package = make_package()
+    package.status = PackageStatus.ASSIGNED
+    package.destination = 1
+    controller.register_package(package)
+
+    updated = await controller.update_package_position("PKG-1", 6.8)
+    assert await gate.get_state() == GateState.ERROR
+    assert updated.status == PackageStatus.ERROR
+
+
+@pytest.mark.asyncio
 async def test_update_package_position_marks_sorted_on_arrival():
     controller, gate, clock = make_controller(gate_lead_distance=0.3)
     package = make_package()

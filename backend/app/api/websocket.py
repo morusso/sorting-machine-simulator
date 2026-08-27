@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.api.state import SimulationState
+from app.simulation.sorting_line import SortingLine
 
 router = APIRouter()
 
@@ -65,7 +65,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         manager.disconnect(websocket)
 
 
-async def broadcast_state(websocket_app_state, simulation: SimulationState) -> None:
+async def broadcast_state(websocket_app_state, simulation: SortingLine) -> None:
     """Broadcast the current simulation snapshot to all connected clients.
 
     Args:

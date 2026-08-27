@@ -10,21 +10,13 @@ def client():
         yield test_client
 
 
-def test_create_package_with_known_barcode_is_assigned(client):
+def test_create_package_starts_in_transit_and_unscanned(client):
     response = client.post("/api/packages", json={"barcode": "5901234567890"})
     assert response.status_code == 200
     body = response.json()
-    assert body["barcode"] == "5901234567890"
-    assert body["destination"] == 1
-    assert body["status"] == "ASSIGNED"
-
-
-def test_create_package_with_unknown_barcode_is_rejected(client):
-    response = client.post("/api/packages", json={"barcode": "0000000000000"})
-    assert response.status_code == 200
-    body = response.json()
+    assert body["barcode"] is None
     assert body["destination"] is None
-    assert body["status"] == "REJECTED"
+    assert body["status"] == "IN_TRANSIT"
 
 
 def test_simulation_status_starts_stopped(client):
