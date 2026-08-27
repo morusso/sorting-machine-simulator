@@ -185,6 +185,14 @@ class GravityConveyorSegment(ConveyorSegment):
         """
         return self._packages[package_id].position
 
+    async def get_package_ids(self) -> list[str]:
+        """Return identifiers of all packages currently tracked on this segment.
+
+        Returns:
+            Identifiers of the packages currently on this segment.
+        """
+        return list(self._packages.keys())
+
     async def get_package_velocity(self, package_id: str) -> float:
         """Return the current velocity of a package on this segment.
 

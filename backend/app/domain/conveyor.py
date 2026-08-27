@@ -21,6 +21,19 @@ class ConveyorSegment(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    async def get_package_ids(self) -> list[str]:
+        """Return identifiers of all packages currently tracked on this segment.
+
+        Lets a caller (e.g. the controller, see README section 12) poll
+        every package's position without already knowing which packages
+        are on which segment.
+
+        Returns:
+            Identifiers of the packages currently on this segment.
+        """
+        raise NotImplementedError
+
 
 class DrivenConveyorSegment(ConveyorSegment):
     """A motor-driven belt/roller conveyor segment.
@@ -165,3 +178,11 @@ class DrivenConveyorSegment(ConveyorSegment):
             KeyError: If the package is not currently on this segment.
         """
         return self._positions[package_id]
+
+    async def get_package_ids(self) -> list[str]:
+        """Return identifiers of all packages currently tracked on this segment.
+
+        Returns:
+            Identifiers of the packages currently on this segment.
+        """
+        return list(self._positions.keys())

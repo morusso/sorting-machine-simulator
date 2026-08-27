@@ -1,3 +1,4 @@
+from app.domain.conveyor import ConveyorSegment
 from app.domain.gate import Gate
 from app.domain.package import Package, PackageStatus
 from app.domain.scanner import ScanEvent, ScanResult
@@ -23,6 +24,9 @@ class Controller:
             opening by the time the package arrives, keyed by gate_id.
             Computed by the caller from each gate's open_time_ms and the
             expected approach speed (see README section 14).
+        gate_clear_distances: How far past a gate's position (in meters) a
+            sorted package must travel before the controller closes the
+            gate behind it, keyed by gate_id.
     """
 
     def __init__(
@@ -31,6 +35,7 @@ class Controller:
         gate_positions: dict[int, float],
         routing_table: dict[str, int],
         gate_lead_distances: dict[int, float],
+        gate_clear_distances: dict[int, float],
     ):
         """Initialize the controller with static routing/gate configuration.
 
@@ -42,12 +47,16 @@ class Controller:
                 be routed to.
             gate_lead_distances: Distance before each gate's position, in
                 meters, at which to trigger it open, keyed by gate_id.
+            gate_clear_distances: Distance past each gate's position, in
+                meters, at which to close it again, keyed by gate_id.
         """
         self.gates = gates
         self.gate_positions = gate_positions
         self.routing_table = routing_table
         self.gate_lead_distances = gate_lead_distances
+        self.gate_clear_distances = gate_clear_distances
         self.packages: dict[str, Package] = {}
+        self._closing_packages: dict[int, str] = {}
 
     def register_package(self, package: Package) -> None:
         """Start tracking a package as it enters the system.
@@ -128,7 +137,9 @@ class Controller:
         For an ASSIGNED package, opens its destination gate once position
         reaches gate_lead_distances before the gate (moving the package to
         WAITING_FOR_GATE). For a WAITING_FOR_GATE package, marks it SORTED
-        once position reaches the gate itself.
+        once position reaches the gate itself, and schedules the gate to
+        close again once the package has cleared it by gate_clear_distances
+        (see _close_gate_if_clear()).
 
         Args:
             package_id: Identifier of the package to update.
@@ -144,6 +155,8 @@ class Controller:
         package = self.packages[package_id]
         package.position = position
 
+        await self._close_gate_if_clear(package_id, position)
+
         if package.status not in (PackageStatus.ASSIGNED, PackageStatus.WAITING_FOR_GATE):
             return package
 
@@ -157,5 +170,43 @@ class Controller:
                 package.status = PackageStatus.WAITING_FOR_GATE
         elif position >= gate_position:
             package.status = PackageStatus.SORTED
+            self._closing_packages[gate_id] = package_id
 
         return package
+
+    async def _close_gate_if_clear(self, package_id: str, position: float) -> None:
+        """Close a gate once the package that just went through it has cleared.
+
+        Args:
+            package_id: Identifier of the package whose position was just
+                reported.
+            position: The package's current position, in meters.
+        """
+        gate_id = self.packages[package_id].destination
+        if gate_id is None or self._closing_packages.get(gate_id) != package_id:
+            return
+
+        close_trigger_position = self.gate_positions[gate_id] + self.gate_clear_distances[gate_id]
+        if position >= close_trigger_position:
+            await self.gates[gate_id].close()
+            del self._closing_packages[gate_id]
+
+    async def sync_from_segments(self, segments: list[ConveyorSegment]) -> None:
+        """Poll transport segments and update every tracked package's position.
+
+        Bridges the engine's physics (see SimulationEngine.tick(), which
+        advances package positions on each registered segment) to the
+        controller's routing/gate logic, without the engine needing to
+        know about the controller (see README section 3: the engine owns
+        motion, the controller owns decisions). Segments may be driven or
+        gravity-based interchangeably (section 4.1a).
+
+        Args:
+            segments: Transport segments to poll for package positions.
+                Packages not tracked by this controller are ignored.
+        """
+        for segment in segments:
+            for package_id in await segment.get_package_ids():
+                if package_id in self.packages:
+                    position = await segment.get_package_position(package_id)
+                    await self.update_package_position(package_id, position)
