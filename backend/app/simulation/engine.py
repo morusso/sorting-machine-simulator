@@ -33,6 +33,7 @@ class SimulationEngine:
         """
         self.clock = clock if clock is not None else Clock()
         self.state = EngineState.STOPPED
+        self.segments: list = []
 
     def start(self):
         """Start the simulation, resuming the clock.
@@ -82,3 +83,46 @@ class SimulationEngine:
         """Stop the simulation and reset the clock to time zero."""
         self.clock.reset()
         self.state = EngineState.STOPPED
+
+    def add_segment(self, segment) -> None:
+        """Register a conveyor segment to be advanced on every tick().
+
+        Args:
+            segment: A DrivenConveyorSegment or GravityConveyorSegment (or
+                any object exposing an advance(dt) method).
+        """
+        self.segments.append(segment)
+
+    def tick(self, real_dt: float) -> float:
+        """Advance the clock and every registered segment by one step.
+
+        This is the bridge between the engine's lifecycle (see README
+        section 20) and package motion: the clock's elapsed simulated
+        time is fed straight into each registered segment's advance().
+        A no-op beyond validating real_dt unless the engine is RUNNING —
+        segments never move while STOPPED or PAUSED, regardless of the
+        clock's own pause state (which reset() and a freshly constructed
+        engine leave unpaused).
+
+        Args:
+            real_dt: Elapsed real (wall-clock) time since the last tick,
+                in seconds.
+
+        Returns:
+            The simulated time actually advanced, in seconds. 0.0 if the
+            engine is not RUNNING.
+
+        Raises:
+            ValueError: If real_dt is negative.
+        """
+        if real_dt < 0:
+            raise ValueError("real_dt must be non-negative")
+        if self.state != EngineState.RUNNING:
+            return 0.0
+
+        before = self.clock.now()
+        self.clock.advance(real_dt)
+        sim_dt = self.clock.now() - before
+        for segment in self.segments:
+            segment.advance(sim_dt)
+        return sim_dt
