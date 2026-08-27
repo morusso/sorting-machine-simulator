@@ -166,8 +166,15 @@ class Controller:
         if package.status == PackageStatus.ASSIGNED:
             trigger_position = gate_position - self.gate_lead_distances[gate_id]
             if position >= trigger_position:
-                await self.gates[gate_id].open()
-                package.status = PackageStatus.WAITING_FOR_GATE
+                try:
+                    await self.gates[gate_id].open()
+                except RuntimeError:
+                    # Gate not in a state that can open (e.g. stuck in
+                    # ERROR, see README section 25, GATE_ERROR) — the
+                    # package can't be routed, so it stops here instead.
+                    package.status = PackageStatus.ERROR
+                else:
+                    package.status = PackageStatus.WAITING_FOR_GATE
         elif position >= gate_position:
             package.status = PackageStatus.SORTED
             self._closing_packages[gate_id] = package_id
