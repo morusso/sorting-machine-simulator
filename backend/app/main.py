@@ -5,6 +5,7 @@ import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router as rest_router
 from app.api.websocket import ConnectionManager
@@ -40,5 +41,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Sorting Machine Simulator", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(rest_router)
 app.include_router(websocket_router)

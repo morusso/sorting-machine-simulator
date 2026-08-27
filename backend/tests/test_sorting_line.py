@@ -65,6 +65,10 @@ async def test_snapshot_reflects_scanned_package():
 
     snapshot = await line.snapshot()
     assert snapshot["type"] == "simulation_state"
+    assert snapshot["engine_state"] == "RUNNING"
+    assert snapshot["conveyor"]["target_speed"] == 1.0
+    assert snapshot["conveyor"]["length"] == 20.0
+    assert snapshot["gates"][0]["position"] == 7.0
     assert len(snapshot["packages"]) == 1
     assert snapshot["packages"][0]["gate"] == 1
     assert len(snapshot["gates"]) == 3

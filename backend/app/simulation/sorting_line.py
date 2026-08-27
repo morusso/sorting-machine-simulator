@@ -170,14 +170,20 @@ class SortingLine:
         See README sections 31 and 34 for the message/statistics shape.
 
         Returns:
-            A dict with the conveyor speed, every tracked package's
-            position/gate/status, every gate's state, and the aggregate
-            statistics summary.
+            A dict with the engine's lifecycle state, the conveyor's
+            speed/length, every tracked package's position/gate/status,
+            every gate's position/state, and the aggregate statistics
+            summary.
         """
         return {
             "type": "simulation_state",
             "timestamp": self.clock.now(),
-            "conveyor": {"speed": self.segment.speed},
+            "engine_state": self.engine.state,
+            "conveyor": {
+                "speed": self.segment.speed,
+                "target_speed": self.segment.target_speed,
+                "length": self.segment.length,
+            },
             "packages": [
                 {
                     "id": package.package_id,
@@ -187,7 +193,10 @@ class SortingLine:
                 }
                 for package in self.controller.packages.values()
             ],
-            "gates": [{"id": gate_id, "state": await gate.get_state()} for gate_id, gate in self.gates.items()],
+            "gates": [
+                {"id": gate_id, "position": self.gate_positions[gate_id], "state": await gate.get_state()}
+                for gate_id, gate in self.gates.items()
+            ],
             "statistics": self.controller.statistics.summary(self.clock.now()),
         }
 
