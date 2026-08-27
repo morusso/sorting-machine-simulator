@@ -2,6 +2,8 @@ from app.domain.conveyor import ConveyorSegment
 from app.domain.gate import Gate
 from app.domain.package import Package, PackageStatus
 from app.domain.scanner import ScanEvent, ScanResult
+from app.simulation.clock import Clock
+from app.simulation.statistics import Statistics
 
 
 class Controller:
@@ -27,6 +29,10 @@ class Controller:
         gate_clear_distances: How far past a gate's position (in meters) a
             sorted package must travel before the controller closes the
             gate behind it, keyed by gate_id.
+        clock: Simulation clock, used to timestamp events recorded in
+            statistics (see README sections 24, 34).
+        statistics: Event log and aggregate counters, updated as packages
+            move through the system.
     """
 
     def __init__(
@@ -36,6 +42,8 @@ class Controller:
         routing_table: dict[str, int],
         gate_lead_distances: dict[int, float],
         gate_clear_distances: dict[int, float],
+        clock: Clock,
+        statistics: Statistics | None = None,
     ):
         """Initialize the controller with static routing/gate configuration.
 
@@ -49,12 +57,17 @@ class Controller:
                 meters, at which to trigger it open, keyed by gate_id.
             gate_clear_distances: Distance past each gate's position, in
                 meters, at which to close it again, keyed by gate_id.
+            clock: Simulation clock to timestamp recorded events with.
+            statistics: Event log/counters to record into. Defaults to a
+                fresh Statistics() if not given.
         """
         self.gates = gates
         self.gate_positions = gate_positions
         self.routing_table = routing_table
         self.gate_lead_distances = gate_lead_distances
         self.gate_clear_distances = gate_clear_distances
+        self.clock = clock
+        self.statistics = statistics if statistics is not None else Statistics()
         self.packages: dict[str, Package] = {}
         self._closing_packages: dict[int, str] = {}
 
@@ -66,6 +79,7 @@ class Controller:
                 package_id.
         """
         self.packages[package.package_id] = package
+        self.statistics.record_package_created(self.clock.now(), package.package_id)
 
     def handle_scan_result(self, result: ScanResult) -> Package:
         """Apply a scan outcome to the corresponding tracked package.
@@ -86,17 +100,21 @@ class Controller:
             KeyError: If result.package_id is not a tracked package.
         """
         package = self.packages[result.package_id]
+        now = self.clock.now()
 
         if result.event == ScanEvent.CODE_NOT_FOUND:
             package.status = PackageStatus.ERROR
+            self.statistics.record_scan_error(now, result.package_id)
             return package
 
         package.barcode = result.code
         package.status = PackageStatus.SCANNED
+        self.statistics.record_code_detected(now, result.package_id, result.code)
 
         gate_id = self.routing_table.get(result.code)
         if gate_id is None:
             package.status = PackageStatus.REJECTED
+            self.statistics.record_unknown_code(now, result.package_id, result.code)
             return package
 
         package.destination = gate_id
@@ -173,11 +191,14 @@ class Controller:
                     # ERROR, see README section 25, GATE_ERROR) — the
                     # package can't be routed, so it stops here instead.
                     package.status = PackageStatus.ERROR
+                    self.statistics.record_gate_error(self.clock.now(), package_id, gate_id)
                 else:
                     package.status = PackageStatus.WAITING_FOR_GATE
+                    self.statistics.record_gate_open(self.clock.now(), package_id, gate_id)
         elif position >= gate_position:
             package.status = PackageStatus.SORTED
             self._closing_packages[gate_id] = package_id
+            self.statistics.record_package_sorted(self.clock.now(), package_id, gate_id)
 
         return package
 

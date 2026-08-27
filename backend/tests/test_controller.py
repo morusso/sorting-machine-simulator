@@ -23,6 +23,7 @@ def make_controller(clock=None, gate_lead_distance=0.3, gate_clear_distance=0.3)
         routing_table={"5901234567890": 1},
         gate_lead_distances={1: gate_lead_distance},
         gate_clear_distances={1: gate_clear_distance},
+        clock=clock,
     )
     return controller, gate, clock
 
@@ -243,3 +244,63 @@ async def test_engine_and_controller_drive_package_to_sorted():
 
     assert controller.packages["PKG-1"].status == PackageStatus.SORTED
     assert await gate.get_state() == GateState.CLOSED
+
+
+def test_register_package_records_statistics():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    assert controller.statistics.total_packages == 1
+
+
+def test_handle_scan_result_records_scan_error():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    controller.handle_scan_result(
+        ScanResult(event=ScanEvent.CODE_NOT_FOUND, scan_id="SCAN-000001", package_id="PKG-1")
+    )
+    assert controller.statistics.scan_errors == 1
+
+
+def test_handle_scan_result_records_unknown_code():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    controller.handle_scan_result(
+        ScanResult(
+            event=ScanEvent.CODE_DETECTED,
+            scan_id="SCAN-000001",
+            package_id="PKG-1",
+            code="0000000000000",
+        )
+    )
+    assert controller.statistics.unknown_codes == 1
+    assert controller.statistics.rejected_packages == 1
+
+
+@pytest.mark.asyncio
+async def test_update_package_position_records_gate_open_and_sorted():
+    controller, _, clock = make_controller(gate_lead_distance=0.3, gate_clear_distance=0.3)
+    package = make_package()
+    package.status = PackageStatus.ASSIGNED
+    package.destination = 1
+    controller.register_package(package)
+
+    await controller.update_package_position("PKG-1", 6.8)
+    assert controller.statistics.events[-1].event_type == "GATE_OPEN"
+
+    clock.advance(0.3)
+    await controller.update_package_position("PKG-1", 7.0)
+    assert controller.statistics.sorted_packages == 1
+
+
+@pytest.mark.asyncio
+async def test_update_package_position_records_gate_error():
+    controller, gate, _ = make_controller(gate_lead_distance=0.3)
+    await gate.open()
+    gate.simulate_error()
+    package = make_package()
+    package.status = PackageStatus.ASSIGNED
+    package.destination = 1
+    controller.register_package(package)
+
+    await controller.update_package_position("PKG-1", 6.8)
+    assert controller.statistics.gate_errors == 1
