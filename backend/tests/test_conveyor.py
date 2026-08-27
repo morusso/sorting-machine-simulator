@@ -78,6 +78,20 @@ def test_advance_with_negative_dt_raises():
         segment.advance(-1.0)
 
 
+@pytest.mark.asyncio
+async def test_get_package_ids_returns_tracked_packages():
+    segment = make_segment()
+    segment.add_package("PKG-1")
+    segment.add_package("PKG-2")
+    assert set(await segment.get_package_ids()) == {"PKG-1", "PKG-2"}
+
+
+@pytest.mark.asyncio
+async def test_get_package_ids_empty_when_no_packages():
+    segment = make_segment()
+    assert await segment.get_package_ids() == []
+
+
 def test_direct_speed_assignment_updates_target_speed():
     segment = make_segment(speed=1.0)
     segment.speed = 2.0

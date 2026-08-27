@@ -132,6 +132,14 @@ def test_advance_with_negative_dt_raises():
         segment.advance(-1.0)
 
 
+@pytest.mark.asyncio
+async def test_get_package_ids_returns_tracked_packages():
+    segment = make_segment()
+    segment.add_package("PKG-1", weight=1.0)
+    segment.add_package("PKG-2", weight=1.0)
+    assert set(await segment.get_package_ids()) == {"PKG-1", "PKG-2"}
+
+
 def test_starts_with_stopper_released():
     segment = make_segment()
     assert segment.stopper_engaged is False
