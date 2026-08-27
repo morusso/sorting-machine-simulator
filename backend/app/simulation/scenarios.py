@@ -213,6 +213,47 @@ async def run_jam(stall_after_s: float = 1.0, max_time_s: float = 10.0) -> Scena
     return await _run_until_settled(line, [], on_tick=stall_once, max_time_s=max_time_s)
 
 
+def _build_multi_gate_line(gate_count: int, segment_length: float) -> SortingLine:
+    """Build a SortingLine with gate_count evenly-spaced gates and a
+    matching 1:1 routing table, for scenarios that need more routing
+    capacity than the API's 3-gate default (see README section 33: up to
+    50 gates should be supported).
+    """
+    usable_length = segment_length - 5.0
+    gate_positions = {gate_id: 3.0 + gate_id * (usable_length / gate_count) for gate_id in range(1, gate_count + 1)}
+    routing_table = {f"{9_000_000_000_000 + gate_id}": gate_id for gate_id in range(1, gate_count + 1)}
+    return SortingLine(segment_length=segment_length, gate_positions=gate_positions, routing_table=routing_table)
+
+
+async def run_load_test(
+    package_count: int = 10_000,
+    gate_count: int = 10,
+    spacing_s: float = 0.2,
+    segment_length: float = 30.0,
+    tick_s: float = 0.2,
+) -> ScenarioResult:
+    """Load test: package_count packages through gate_count gates.
+
+    Verifies README section 37's success criterion — 10,000+ packages
+    simulated without critical errors — at a throughput within section
+    33's stated 1-10 pkg/s range (spacing_s=0.2 -> 5 pkg/s). Spread across
+    gate_count gates (rather than the API's usual 3) so that volume alone
+    doesn't trigger the gate-contention edge case documented in
+    run_high_speed() — that's a distinct, already-covered scenario, not
+    what this one means to exercise.
+
+    tick_s is coarser than the other scenarios' default (see TICK_S):
+    correct here because gate triggering only depends on position
+    crossing a threshold, not on tick granularity, and a coarser step
+    keeps this scenario's own run time reasonable at 10,000+ packages.
+    """
+    line = _build_multi_gate_line(gate_count, segment_length)
+    barcodes = _round_robin_barcodes(line.controller.routing_table)
+    schedule = [(i * spacing_s, next(barcodes)) for i in range(package_count)]
+    max_time_s = package_count * spacing_s + 60.0
+    return await _run_until_settled(line, schedule, max_time_s=max_time_s, tick_s=tick_s)
+
+
 async def run_gravity_segment(
     weight: float = 1.0,
     length: float = 3.0,

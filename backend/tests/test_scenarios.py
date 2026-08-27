@@ -1,4 +1,5 @@
 import random
+import time
 
 import pytest
 
@@ -63,6 +64,37 @@ async def test_run_jam_leaves_the_package_unsorted():
     assert result.sorted_packages == 0
     assert result.rejected_packages == 0
     assert result.error_packages == 0
+
+
+@pytest.mark.asyncio
+async def test_run_load_test_scales_gates_and_routing_to_gate_count():
+    result = await scenarios.run_load_test(package_count=100, gate_count=10, spacing_s=0.2, segment_length=30.0)
+    assert result.total_packages == 100
+    assert result.sorted_packages == 100
+    assert result.rejected_packages == 0
+    assert result.error_packages == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.slow
+async def test_run_load_test_handles_10000_packages_without_critical_errors():
+    """README section 37's success criterion: 10,000+ packages simulated
+    without critical errors. Excluded from the default test run (see
+    pytest.ini) since it takes several seconds; run explicitly with
+    `pytest -m slow`.
+    """
+    start = time.perf_counter()
+    result = await scenarios.run_load_test(package_count=10_000, gate_count=10, spacing_s=0.2, segment_length=30.0)
+    wall_time_s = time.perf_counter() - start
+
+    assert result.total_packages == 10_000
+    assert result.unsorted_packages == 0
+    assert result.sorted_packages == 10_000
+    assert result.rejected_packages == 0
+    assert result.error_packages == 0
+    # Soft performance guard: catches a severe regression, not tuned as a
+    # precise benchmark (~9s measured locally for this run).
+    assert wall_time_s < 60.0
 
 
 @pytest.mark.asyncio
