@@ -102,6 +102,7 @@ class SortingLine:
             routing_table=routing_table,
             gate_lead_distances={gid: segment_max_speed * (GATE_OPEN_TIME_MS / 1000) for gid in gate_positions},
             gate_clear_distances={gid: 0.5 for gid in gate_positions},
+            clock=self.clock,
         )
         self.scanner_position = scanner_position
         self.scanner = SimulatedScanner(error_rate=scanner_error_rate, rng=rng)
@@ -166,11 +167,12 @@ class SortingLine:
     async def snapshot(self) -> dict:
         """Build a WebSocket-ready snapshot of the current machine state.
 
-        See README section 31 for the message shape.
+        See README sections 31 and 34 for the message/statistics shape.
 
         Returns:
             A dict with the conveyor speed, every tracked package's
-            position/gate/status, and every gate's state.
+            position/gate/status, every gate's state, and the aggregate
+            statistics summary.
         """
         return {
             "type": "simulation_state",
@@ -186,6 +188,7 @@ class SortingLine:
                 for package in self.controller.packages.values()
             ],
             "gates": [{"id": gate_id, "state": await gate.get_state()} for gate_id, gate in self.gates.items()],
+            "statistics": self.controller.statistics.summary(self.clock.now()),
         }
 
     def reset(self) -> None:

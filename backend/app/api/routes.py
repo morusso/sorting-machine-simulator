@@ -34,6 +34,23 @@ class ConveyorStatusResponse(BaseModel):
     target_speed: float
 
 
+class StatisticsResponse(BaseModel):
+    """Response body for GET /api/statistics (see README section 34)."""
+
+    total_packages: int
+    sorted_packages: int
+    rejected_packages: int
+    unknown_codes: int
+    scan_errors: int
+    gate_errors: int
+    error_packages: int
+    average_scan_time: float | None
+    average_sort_time: float | None
+    throughput: float
+    packages_per_second: float
+    success_rate: float | None
+
+
 def _state(request: Request) -> SortingLine:
     """Fetch the shared SortingLine stashed on the app by main.py."""
     return request.app.state.simulation
@@ -91,3 +108,10 @@ async def set_conveyor_speed(body: SetConveyorSpeedRequest, request: Request) ->
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ConveyorStatusResponse(speed=state.segment.speed, target_speed=state.segment.target_speed)
+
+
+@router.get("/api/statistics", response_model=StatisticsResponse)
+async def get_statistics(request: Request) -> StatisticsResponse:
+    """Return the aggregate statistics summary (see README section 34)."""
+    state = _state(request)
+    return StatisticsResponse(**state.controller.statistics.summary(state.clock.now()))

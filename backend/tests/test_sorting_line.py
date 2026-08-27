@@ -68,6 +68,7 @@ async def test_snapshot_reflects_scanned_package():
     assert len(snapshot["packages"]) == 1
     assert snapshot["packages"][0]["gate"] == 1
     assert len(snapshot["gates"]) == 3
+    assert snapshot["statistics"]["total_packages"] == 1
 
 
 @pytest.mark.asyncio

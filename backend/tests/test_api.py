@@ -65,3 +65,18 @@ def test_websocket_streams_simulation_state(client):
     assert "packages" in message
     assert "gates" in message
     assert len(message["gates"]) == 3
+    assert "statistics" in message
+
+
+def test_get_statistics_starts_empty(client):
+    response = client.get("/api/statistics")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_packages"] == 0
+    assert body["success_rate"] is None
+
+
+def test_get_statistics_counts_created_package(client):
+    client.post("/api/packages", json={"barcode": "5901234567890"})
+    response = client.get("/api/statistics")
+    assert response.json()["total_packages"] == 1
