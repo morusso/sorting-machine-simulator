@@ -20,6 +20,16 @@ def test_create_package_starts_in_transit_and_unscanned(client):
     assert body["status"] == "IN_TRANSIT"
 
 
+def test_create_package_defaults_to_a_1kg_weight(client):
+    response = client.post("/api/packages", json={"barcode": "5901234567890"})
+    assert response.json()["weight"] == 1.0
+
+
+def test_create_package_accepts_a_custom_weight(client):
+    response = client.post("/api/packages", json={"barcode": "5901234567890", "weight": 4.2})
+    assert response.json()["weight"] == 4.2
+
+
 def test_create_package_assigns_sequential_ids(client):
     first = client.post("/api/packages", json={"barcode": "5901234567890"}).json()
     second = client.post("/api/packages", json={"barcode": "5901234567890"}).json()
@@ -122,6 +132,8 @@ def test_websocket_streams_simulation_state(client):
     assert "gates" in message
     assert len(message["gates"]) == 3
     assert "statistics" in message
+    assert message["gravity_segment"]["packages"] == []
+    assert message["gravity_segment"]["length"] > 0
 
 
 def test_websocket_reflects_a_package_created_beforehand(client):
