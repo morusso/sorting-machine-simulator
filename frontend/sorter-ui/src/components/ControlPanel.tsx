@@ -5,6 +5,7 @@ import type { EngineState } from "@/lib/types";
 
 interface Props {
   engineState: EngineState;
+  currentSpeed: number;
   targetSpeed: number;
   busy: boolean;
   onStart: () => Promise<void>;
@@ -15,6 +16,7 @@ interface Props {
 
 export function ControlPanel({
   engineState,
+  currentSpeed,
   targetSpeed,
   busy,
   onStart,
@@ -30,27 +32,35 @@ export function ControlPanel({
       <div className="row">
         <button
           className="primary"
+          data-cy="start-button"
           disabled={busy || engineState === "RUNNING"}
           onClick={() => onStart()}
         >
           Start
         </button>
-        <button disabled={busy || engineState !== "RUNNING"} onClick={() => onStop()}>
+        <button
+          data-cy="stop-button"
+          disabled={busy || engineState !== "RUNNING"}
+          onClick={() => onStop()}
+        >
           Stop
         </button>
-        <button disabled={busy} onClick={() => onReset()}>
+        <button data-cy="reset-button" disabled={busy} onClick={() => onReset()}>
           Reset
         </button>
         <span style={{ width: 1, alignSelf: "stretch", background: "var(--panel-border)" }} />
+        <span data-cy="current-speed">Speed: {currentSpeed.toFixed(2)} m/s</span>
         <input
           type="number"
           step="0.1"
           min="0"
+          data-cy="speed-input"
           value={speedInput}
           onChange={(e) => setSpeedInput(e.target.value)}
           style={{ width: 90 }}
         />
         <button
+          data-cy="set-speed-button"
           disabled={busy || speedInput === ""}
           onClick={() => onSetSpeed(Number(speedInput))}
         >

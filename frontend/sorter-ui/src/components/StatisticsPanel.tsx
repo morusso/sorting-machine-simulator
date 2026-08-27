@@ -14,19 +14,27 @@ export function StatisticsPanel({ stats }: Props) {
       <h2>Statistics</h2>
       <div className="stats-grid">
         <div className="stat">
-          <div className="value">{stats.total_packages}</div>
+          <div className="value" data-cy="stat-total">
+            {stats.total_packages}
+          </div>
           <div className="label">Total</div>
         </div>
         <div className="stat">
-          <div className="value">{stats.sorted_packages}</div>
+          <div className="value" data-cy="stat-sorted">
+            {stats.sorted_packages}
+          </div>
           <div className="label">Sorted</div>
         </div>
         <div className="stat">
-          <div className="value">{stats.rejected_packages}</div>
+          <div className="value" data-cy="stat-rejected">
+            {stats.rejected_packages}
+          </div>
           <div className="label">Rejected</div>
         </div>
         <div className="stat">
-          <div className="value">{stats.error_packages}</div>
+          <div className="value" data-cy="stat-errors">
+            {stats.error_packages}
+          </div>
           <div className="label">Errors</div>
         </div>
         <div className="stat">

@@ -26,16 +26,22 @@ export function CreatePackageForm({ busy, onCreate }: Props) {
       <div className="row">
         <input
           placeholder="barcode"
+          data-cy="barcode-input"
           value={barcode}
           onChange={(e) => setBarcode(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit(barcode)}
           style={{ width: 180 }}
         />
-        <button className="primary" disabled={busy || !barcode} onClick={() => submit(barcode)}>
+        <button
+          className="primary"
+          data-cy="create-package-button"
+          disabled={busy || !barcode}
+          onClick={() => submit(barcode)}
+        >
           Create
         </button>
         {DEMO_BARCODES.map((code) => (
-          <button key={code} disabled={busy} onClick={() => submit(code)}>
+          <button key={code} data-cy={`demo-barcode-${code}`} disabled={busy} onClick={() => submit(code)}>
             {code}
           </button>
         ))}
