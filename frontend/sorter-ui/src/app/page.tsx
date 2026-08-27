@@ -37,17 +37,24 @@ export default function Home() {
     <main>
       <div className="header">
         <h1>SORTER SIMULATOR</h1>
-        <span className={`status-pill`}>
+        <span className="status-pill" data-cy="connection-status">
           <span className={`status-dot ${status}`} />
           {status === "open" ? "connected" : status}
-          {snapshot && ` · engine ${snapshot.engine_state}`}
+          {snapshot && (
+            <span data-cy="engine-status"> · engine {snapshot.engine_state}</span>
+          )}
         </span>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner" data-cy="error-banner">
+          {error}
+        </div>
+      )}
 
       <ControlPanel
         engineState={snapshot?.engine_state ?? "STOPPED"}
+        currentSpeed={snapshot?.conveyor.speed ?? 0}
         targetSpeed={snapshot?.conveyor.target_speed ?? 1.0}
         busy={busy}
         onStart={() => guarded(startSimulation)}

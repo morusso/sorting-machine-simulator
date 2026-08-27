@@ -10,9 +10,11 @@ export function GatesPanel({ gates }: Props) {
       <h2>Gates</h2>
       <div className="gates-grid">
         {gates.map((gate) => (
-          <div key={gate.id} className={`gate-card ${gate.state}`}>
+          <div key={gate.id} className={`gate-card ${gate.state}`} data-cy="gate-card" data-gate-id={gate.id}>
             <div>GATE {gate.id}</div>
-            <div className="gate-state">{gate.state}</div>
+            <div className="gate-state" data-cy={`gate-${gate.id}-state`}>
+              {gate.state}
+            </div>
           </div>
         ))}
       </div>
