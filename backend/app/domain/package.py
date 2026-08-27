@@ -34,6 +34,9 @@ class Package(BaseModel):
         width: Package width, in meters.
         length: Package length, in meters.
         height: Package height, in meters.
+        weight: Package mass, in kg. Only relevant on gravity segments (see
+            README section 4.1a) — driven segments move every package at
+            the same belt speed regardless of weight.
         status: Current lifecycle state of the package.
     """
 
@@ -45,4 +48,5 @@ class Package(BaseModel):
     width: float
     length: float
     height: float
+    weight: float = 1.0
     status: PackageStatus = PackageStatus.CREATED

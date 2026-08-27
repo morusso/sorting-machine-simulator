@@ -13,6 +13,7 @@ import { ControlPanel } from "@/components/ControlPanel";
 import { CreatePackageForm } from "@/components/CreatePackageForm";
 import { ConveyorTrack } from "@/components/ConveyorTrack";
 import { GatesPanel } from "@/components/GatesPanel";
+import { GravitySegmentPanel } from "@/components/GravitySegmentPanel";
 import { PackagesTable } from "@/components/PackagesTable";
 import { StatisticsPanel } from "@/components/StatisticsPanel";
 
@@ -74,6 +75,7 @@ export default function Home() {
             gates={snapshot.gates}
           />
           <GatesPanel gates={snapshot.gates} />
+          <GravitySegmentPanel segment={snapshot.gravity_segment} />
           <PackagesTable packages={snapshot.packages} />
         </>
       ) : (

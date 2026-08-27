@@ -9,9 +9,14 @@ router = APIRouter()
 
 
 class CreatePackageRequest(BaseModel):
-    """Request body for POST /api/packages (see README section 30)."""
+    """Request body for POST /api/packages (see README section 30).
+
+    weight only matters once the package reaches the gravity buffer
+    segment past the driven segment's end (see README section 4.1a).
+    """
 
     barcode: str
+    weight: float = 1.0
 
 
 class SetConveyorSpeedRequest(BaseModel):
@@ -59,7 +64,7 @@ def _state(request: Request) -> SortingLine:
 @router.post("/api/packages", response_model=Package)
 async def create_package(body: CreatePackageRequest, request: Request) -> Package:
     """Create a package with the given barcode and place it on the conveyor."""
-    return await _state(request).create_package(body.barcode)
+    return await _state(request).create_package(body.barcode, weight=body.weight)
 
 
 @router.get("/api/simulation/status", response_model=SimulationStatusResponse)

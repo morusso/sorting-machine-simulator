@@ -22,6 +22,7 @@ export interface Package {
   width: number;
   length: number;
   height: number;
+  weight: number;
   status: PackageStatus;
 }
 
@@ -63,6 +64,17 @@ export interface SnapshotGate {
   state: GateState;
 }
 
+export interface GravityPackage {
+  id: string;
+  position: number;
+  velocity: number;
+}
+
+export interface GravitySegment {
+  length: number;
+  packages: GravityPackage[];
+}
+
 export interface SimulationSnapshot {
   type: "simulation_state";
   timestamp: number;
@@ -70,5 +82,6 @@ export interface SimulationSnapshot {
   conveyor: { speed: number; target_speed: number; length: number };
   packages: SnapshotPackage[];
   gates: SnapshotGate[];
+  gravity_segment: GravitySegment;
   statistics: Statistics;
 }
