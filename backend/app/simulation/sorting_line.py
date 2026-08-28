@@ -153,6 +153,7 @@ class SortingLine:
             gate_clear_distances={gid: 0.5 for gid in gate_positions},
             clock=self.clock,
         )
+        self.events = self.controller.events
         self.scanner_position = scanner_position
         self.scanner = SimulatedScanner(error_rate=scanner_error_rate, rng=rng)
         self._unscanned_barcodes: dict[str, str] = {}
