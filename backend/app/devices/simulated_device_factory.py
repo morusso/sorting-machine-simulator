@@ -1,6 +1,7 @@
 """Concrete DeviceFactory building the simulated devices SortingLine uses today."""
 
 import random
+from collections.abc import Callable
 
 from app.devices.encoder.simulated_encoder import SimulatedEncoder
 from app.devices.gates.simulated_gate import SimulatedGate
@@ -53,9 +54,14 @@ class SimulatedDeviceFactory(DeviceFactory):
         """See DeviceFactory.create_gate."""
         return SimulatedGate(clock, open_time_ms=open_time_ms, close_time_ms=close_time_ms)
 
-    def create_scanner(self, error_rate: float, rng: random.Random | None) -> Scanner:
+    def create_scanner(
+        self,
+        error_rate: float,
+        rng: random.Random | None,
+        barcode_lookup: Callable[[str], str | None],
+    ) -> Scanner:
         """See DeviceFactory.create_scanner."""
-        return SimulatedScanner(error_rate=error_rate, rng=rng)
+        return SimulatedScanner(barcode_lookup, error_rate=error_rate, rng=rng)
 
     def create_encoder(self, driven_segment: DrivenConveyorSegment) -> Encoder:
         """See DeviceFactory.create_encoder."""

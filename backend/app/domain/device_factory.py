@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from app.domain.conveyor import DrivenConveyorSegment
@@ -90,13 +91,23 @@ class DeviceFactory(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def create_scanner(self, error_rate: float, rng: random.Random | None) -> Scanner:
+    def create_scanner(
+        self,
+        error_rate: float,
+        rng: random.Random | None,
+        barcode_lookup: Callable[[str], str | None],
+    ) -> Scanner:
         """Build the barcode scanner packages pass on their way to the gates.
 
         Args:
             error_rate: Probability, in [0, 1], that a scan attempt fails
                 to find a code.
             rng: Random source used to decide scan outcomes.
+            barcode_lookup: Given a package_id, returns that package's
+                true barcode (or None if unknown). Simulation-only — a
+                real scanner factory would ignore this, since a real
+                scanner reads the code optically rather than being told it
+                (see Scanner.scan()).
 
         Returns:
             A scanner.
