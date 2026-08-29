@@ -3,26 +3,32 @@
 import { useState } from "react";
 import type { EngineState } from "@/lib/types";
 
+const SPEED_MULTIPLIER_PRESETS = [1, 2, 10, 100];
+
 interface Props {
   engineState: EngineState;
   currentSpeed: number;
   targetSpeed: number;
+  speedMultiplier: number;
   busy: boolean;
   onStart: () => Promise<void>;
   onStop: () => Promise<void>;
   onReset: () => Promise<void>;
   onSetSpeed: (speed: number) => Promise<void>;
+  onSetSpeedMultiplier: (multiplier: number) => Promise<void>;
 }
 
 export function ControlPanel({
   engineState,
   currentSpeed,
   targetSpeed,
+  speedMultiplier,
   busy,
   onStart,
   onStop,
   onReset,
   onSetSpeed,
+  onSetSpeedMultiplier,
 }: Props) {
   const [speedInput, setSpeedInput] = useState(String(targetSpeed));
 
@@ -66,6 +72,20 @@ export function ControlPanel({
         >
           Set speed (m/s)
         </button>
+      </div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <span data-cy="current-speed-multiplier">Sim speed: x{speedMultiplier}</span>
+        {SPEED_MULTIPLIER_PRESETS.map((preset) => (
+          <button
+            key={preset}
+            className={preset === speedMultiplier ? "primary" : undefined}
+            data-cy={`speed-multiplier-x${preset}`}
+            disabled={busy}
+            onClick={() => onSetSpeedMultiplier(preset)}
+          >
+            x{preset}
+          </button>
+        ))}
       </div>
     </section>
   );

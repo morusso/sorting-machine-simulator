@@ -1,6 +1,7 @@
 import type {
   ConveyorStatus,
   Package,
+  SimulationSpeed,
   SimulationStatus,
   Statistics,
 } from "./types";
@@ -51,6 +52,13 @@ export function setConveyorSpeed(speed: number): Promise<ConveyorStatus> {
   return request<ConveyorStatus>("/api/conveyor/speed", {
     method: "POST",
     body: JSON.stringify({ speed }),
+  });
+}
+
+export function setSimulationSpeed(speedMultiplier: number): Promise<SimulationSpeed> {
+  return request<SimulationSpeed>("/api/simulation/speed", {
+    method: "POST",
+    body: JSON.stringify({ speed_multiplier: speedMultiplier }),
   });
 }
 

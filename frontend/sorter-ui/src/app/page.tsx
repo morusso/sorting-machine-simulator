@@ -5,6 +5,7 @@ import {
   createPackage,
   resetSimulation,
   setConveyorSpeed,
+  setSimulationSpeed,
   startSimulation,
   stopSimulation,
 } from "@/lib/api";
@@ -57,11 +58,13 @@ export default function Home() {
         engineState={snapshot?.engine_state ?? "STOPPED"}
         currentSpeed={snapshot?.conveyor.speed ?? 0}
         targetSpeed={snapshot?.conveyor.target_speed ?? 1.0}
+        speedMultiplier={snapshot?.speed_multiplier ?? 1.0}
         busy={busy}
         onStart={() => guarded(startSimulation)}
         onStop={() => guarded(stopSimulation)}
         onReset={() => guarded(resetSimulation)}
         onSetSpeed={(speed) => guarded(() => setConveyorSpeed(speed))}
+        onSetSpeedMultiplier={(multiplier) => guarded(() => setSimulationSpeed(multiplier))}
       />
 
       <CreatePackageForm busy={busy} onCreate={(barcode) => guarded(() => createPackage(barcode))} />
