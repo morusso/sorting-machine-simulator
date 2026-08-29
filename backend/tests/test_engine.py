@@ -170,3 +170,25 @@ def test_tick_with_negative_real_dt_raises():
     engine.start()
     with pytest.raises(ValueError):
         engine.tick(-1.0)
+
+
+def test_set_speed_multiplier_affects_subsequent_ticks():
+    engine = SimulationEngine()
+    engine.start()
+    engine.set_speed_multiplier(10.0)
+    sim_dt = engine.tick(1.0)
+    assert sim_dt == pytest.approx(10.0)
+
+
+def test_set_speed_multiplier_works_while_stopped():
+    engine = SimulationEngine()
+    engine.set_speed_multiplier(10.0)
+    engine.start()
+    sim_dt = engine.tick(1.0)
+    assert sim_dt == pytest.approx(10.0)
+
+
+def test_set_speed_multiplier_rejects_non_positive():
+    engine = SimulationEngine()
+    with pytest.raises(ValueError):
+        engine.set_speed_multiplier(0.0)

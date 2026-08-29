@@ -35,6 +35,23 @@ class Clock:
         """Whether the clock is currently paused."""
         return self._paused
 
+    def set_speed_multiplier(self, speed_multiplier: float) -> None:
+        """Change how many simulated seconds one real second of advance() represents.
+
+        Takes effect immediately: the next advance() call uses the new
+        factor, even mid-run (see README section 20-21, "SPEED x1 / x2 /
+        x10 / x100").
+
+        Args:
+            speed_multiplier: New factor applied to each advance() call.
+
+        Raises:
+            ValueError: If speed_multiplier is not positive.
+        """
+        if speed_multiplier <= 0:
+            raise ValueError("speed_multiplier must be positive")
+        self.speed_multiplier = speed_multiplier
+
     def advance(self, real_dt: float) -> None:
         """Advance simulated time by real_dt * speed_multiplier.
 

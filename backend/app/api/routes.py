@@ -25,6 +25,17 @@ class SetConveyorSpeedRequest(BaseModel):
     speed: float
 
 
+class SetSimulationSpeedRequest(BaseModel):
+    """Request body for POST /api/simulation/speed (see README section 20-21).
+
+    Not restricted to the x1/x2/x10/x100 presets from the README's
+    example — any positive multiplier is accepted (see
+    SimulationEngine.set_speed_multiplier()).
+    """
+
+    speed_multiplier: float
+
+
 class SimulationStatusResponse(BaseModel):
     """Response body for GET /api/simulation/status."""
 
@@ -37,6 +48,12 @@ class ConveyorStatusResponse(BaseModel):
 
     speed: float
     target_speed: float
+
+
+class SimulationSpeedResponse(BaseModel):
+    """Response body for POST /api/simulation/speed."""
+
+    speed_multiplier: float
 
 
 class StatisticsResponse(BaseModel):
@@ -102,6 +119,17 @@ async def reset_simulation(request: Request) -> SimulationStatusResponse:
     state = _state(request)
     state.reset()
     return SimulationStatusResponse(state=state.engine.state, time=state.clock.now())
+
+
+@router.post("/api/simulation/speed", response_model=SimulationSpeedResponse)
+async def set_simulation_speed(body: SetSimulationSpeedRequest, request: Request) -> SimulationSpeedResponse:
+    """Command a new virtual-time speed multiplier (see SimulationEngine.set_speed_multiplier())."""
+    state = _state(request)
+    try:
+        state.engine.set_speed_multiplier(body.speed_multiplier)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SimulationSpeedResponse(speed_multiplier=state.clock.speed_multiplier)
 
 
 @router.post("/api/conveyor/speed", response_model=ConveyorStatusResponse)

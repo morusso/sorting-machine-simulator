@@ -265,6 +265,7 @@ class SortingLine:
             "type": "simulation_state",
             "timestamp": self.clock.now(),
             "engine_state": self.engine.state,
+            "speed_multiplier": self.clock.speed_multiplier,
             "conveyor": {
                 "speed": self.segment.speed,
                 "target_speed": self.segment.target_speed,
