@@ -10,6 +10,15 @@ from app.simulation.sorting_line_config import DEFAULT_SCANNER_POSITION, Sorting
 GATE_OPEN_TIME_MS = 300.0
 GATE_CLOSE_TIME_MS = 300.0
 
+ENTRY_SENSOR_ID = "SENSOR-ENTRY"
+END_OF_BELT_SENSOR_ID = "SENSOR-END-OF-BELT"
+ENTRY_SENSOR_RANGE_M = 0.1
+"""How close to the segment's start a package must be to break the entry
+sensor's beam, in meters (see README section 10)."""
+END_OF_BELT_SENSOR_RANGE_M = 0.1
+"""How close to the segment's end a package must be to break the
+end-of-belt sensor's beam, in meters (see README section 10)."""
+
 
 class SortingLine:
     """Wires an engine, a driven conveyor segment, a downstream gravity
@@ -93,8 +102,12 @@ class SortingLine:
         self.events = self.controller.events
         self.scanner_position = config.scanner_position
         self.scanner = self.device_factory.create_scanner(config.scanner_error_rate, config.rng)
+        self.encoder = self.device_factory.create_encoder(self.segment)
+        self.entry_sensor = self.device_factory.create_sensor(ENTRY_SENSOR_ID)
+        self.end_of_belt_sensor = self.device_factory.create_sensor(END_OF_BELT_SENSOR_ID)
         self._unscanned_barcodes: dict[str, str] = {}
         self._package_count = 0
+        self._entry_references: dict[str, tuple[int, float]] = {}
 
     async def create_package(self, barcode: str, position: float = 0.0, weight: float = 1.0) -> Package:
         """Create a package carrying the given barcode and place it on the conveyor.
@@ -120,6 +133,7 @@ class SortingLine:
         package.status = PackageStatus.IN_TRANSIT
         self.controller.register_package(package)
         self.segment.add_package(package_id, position=position)
+        self._entry_references[package_id] = (await self.encoder.get_pulse_count(), position)
         self._unscanned_barcodes[package_id] = barcode
         return package
 
@@ -143,6 +157,63 @@ class SortingLine:
             result = await self.scanner.scan()
             self.controller.handle_scan_result(result)
 
+    async def _position_from_encoder(self, package_id: str) -> float:
+        """Derive a driven-segment package's position from encoder pulses.
+
+        Reconstructed as the package's entry position plus how far the
+        belt has moved (per self.encoder.pulses_per_meter) since it
+        entered, rather than read directly off DrivenConveyorSegment's own
+        tracked position. This is what makes the encoder swappable without
+        touching the sorting algorithm (see README sections 9, 14, 37):
+        everything downstream only ever sees this derived value.
+
+        Args:
+            package_id: Identifier of the package to locate.
+
+        Returns:
+            The package's encoder-derived position, in meters, clamped to
+            the segment length like DrivenConveyorSegment's own tracking.
+        """
+        entry_pulses, entry_position = self._entry_references[package_id]
+        current_pulses = await self.encoder.get_pulse_count()
+        distance_traveled = (current_pulses - entry_pulses) / self.encoder.pulses_per_meter
+        return min(entry_position + distance_traveled, self.segment.length)
+
+    async def _sync_controller_from_encoder(self) -> None:
+        """Report every driven-segment package's encoder-derived position
+        to the controller, triggering gates as usual.
+
+        This is the only way a driven-segment package's position reaches
+        the controller — never DrivenConveyorSegment's own tracked
+        position directly (see _position_from_encoder()) — mirroring how a
+        real controller only knows what its encoder reports, not the
+        machine's "true" state (see README section 28).
+        """
+        for package_id in await self.segment.get_package_ids():
+            if package_id not in self.controller.packages:
+                continue
+            position = await self._position_from_encoder(package_id)
+            await self.controller.update_package_position(package_id, position)
+
+    async def _update_sensors(self) -> None:
+        """Trigger/clear the entry and end-of-belt sensors from current package positions.
+
+        Sensors report the segment's actual physical state directly (like
+        a real photoelectric beam would), independent of the encoder (see
+        README section 10).
+        """
+        positions = [await self.segment.get_package_position(pid) for pid in await self.segment.get_package_ids()]
+
+        if any(position <= ENTRY_SENSOR_RANGE_M for position in positions):
+            self.entry_sensor.trigger()
+        else:
+            self.entry_sensor.clear()
+
+        if any(position >= self.segment.length - END_OF_BELT_SENSOR_RANGE_M for position in positions):
+            self.end_of_belt_sensor.trigger()
+        else:
+            self.end_of_belt_sensor.clear()
+
     async def _handoff_to_gravity_segment(self) -> None:
         """Hand off packages that reached the end of the driven segment.
 
@@ -160,6 +231,7 @@ class SortingLine:
                 continue
             package = self.controller.packages[package_id]
             self.segment.remove_package(package_id)
+            del self._entry_references[package_id]
             self.gravity_segment.add_package(
                 package_id, weight=package.weight, position=0.0, velocity=self.segment.speed
             )
@@ -174,7 +246,8 @@ class SortingLine:
         """
         self.engine.tick(real_dt)
         await self._scan_arrived_packages()
-        await self.controller.sync_from_segments([self.segment])
+        await self._update_sensors()
+        await self._sync_controller_from_encoder()
         await self._handoff_to_gravity_segment()
 
     async def snapshot(self) -> dict:
@@ -209,6 +282,11 @@ class SortingLine:
             "gates": [
                 {"id": gate_id, "position": self.gate_positions[gate_id], "state": await gate.get_state()}
                 for gate_id, gate in self.gates.items()
+            ],
+            "encoder": {"pulse_count": await self.encoder.get_pulse_count()},
+            "sensors": [
+                {"id": ENTRY_SENSOR_ID, "triggered": await self.entry_sensor.is_triggered()},
+                {"id": END_OF_BELT_SENSOR_ID, "triggered": await self.end_of_belt_sensor.is_triggered()},
             ],
             "gravity_segment": {
                 "length": self.gravity_segment.length,

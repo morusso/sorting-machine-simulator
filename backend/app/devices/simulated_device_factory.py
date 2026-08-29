@@ -2,18 +2,23 @@
 
 import random
 
+from app.devices.encoder.simulated_encoder import SimulatedEncoder
 from app.devices.gates.simulated_gate import SimulatedGate
 from app.devices.scanner.simulated_scanner import SimulatedScanner
+from app.devices.sensors.simulated_sensor import SimulatedSensor
 from app.domain.conveyor import DrivenConveyorSegment
 from app.domain.device_factory import DeviceFactory
+from app.domain.encoder import Encoder
 from app.domain.gate import Gate
 from app.domain.gravity_conveyor import GravityConveyorSegment
 from app.domain.scanner import Scanner
+from app.domain.sensor import Sensor
 from app.simulation.clock import Clock
 
 
 class SimulatedDeviceFactory(DeviceFactory):
-    """Builds DrivenConveyorSegment/GravityConveyorSegment/SimulatedGate/SimulatedScanner.
+    """Builds DrivenConveyorSegment/GravityConveyorSegment/SimulatedGate/
+    SimulatedScanner/SimulatedEncoder/SimulatedSensor.
 
     The default DeviceFactory used by SortingLine. A future real-hardware
     factory (see README section 28) would implement the same interface,
@@ -51,3 +56,11 @@ class SimulatedDeviceFactory(DeviceFactory):
     def create_scanner(self, error_rate: float, rng: random.Random | None) -> Scanner:
         """See DeviceFactory.create_scanner."""
         return SimulatedScanner(error_rate=error_rate, rng=rng)
+
+    def create_encoder(self, driven_segment: DrivenConveyorSegment) -> Encoder:
+        """See DeviceFactory.create_encoder."""
+        return SimulatedEncoder(driven_segment)
+
+    def create_sensor(self, sensor_id: str) -> Sensor:
+        """See DeviceFactory.create_sensor."""
+        return SimulatedSensor(sensor_id)

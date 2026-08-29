@@ -39,5 +39,9 @@ class SimulatedEncoder(Encoder):
             The total pulse count implied by the conveyor's belt travel
             since the segment was created.
         """
-        pulses_per_meter = self.resolution / self.wheel_circumference
-        return round(self._conveyor.total_distance * pulses_per_meter)
+        return round(self._conveyor.total_distance * self.pulses_per_meter)
+
+    @property
+    def pulses_per_meter(self) -> float:
+        """Encoder pulses per meter of belt travel, from resolution/wheel_circumference."""
+        return self.resolution / self.wheel_circumference
