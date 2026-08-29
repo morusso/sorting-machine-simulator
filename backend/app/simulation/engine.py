@@ -1,18 +1,7 @@
-from enum import Enum
-
 from app.simulation.clock import Clock
+from app.simulation.engine_states import INITIAL_STATE, EngineState, _EngineStateHandler
 
-
-class EngineState(str, Enum):
-    """Lifecycle states of the SimulationEngine.
-
-    Valid transitions are: STOPPED -> RUNNING -> PAUSED -> RUNNING, and
-    RUNNING/PAUSED -> STOPPED.
-    """
-
-    STOPPED = "STOPPED"
-    RUNNING = "RUNNING"
-    PAUSED = "PAUSED"
+__all__ = ["EngineState", "SimulationEngine"]
 
 
 class SimulationEngine:
@@ -21,6 +10,11 @@ class SimulationEngine:
     See README section 20; the engine is the central component that other
     simulated devices (conveyor, scanner, encoder, sensors, gates) are
     expected to be synchronized against.
+
+    Delegates every lifecycle command (start/pause/resume/stop) to a
+    _EngineStateHandler (see app.simulation.engine_states, State Pattern),
+    so the valid-transition rules for each EngineState live with that
+    state rather than as guard conditions scattered across this class.
     """
 
     def __init__(self, clock: Clock | None = None):
@@ -32,8 +26,13 @@ class SimulationEngine:
                 speed_multiplier.
         """
         self.clock = clock if clock is not None else Clock()
-        self.state = EngineState.STOPPED
+        self._state: _EngineStateHandler = INITIAL_STATE
         self.segments: list = []
+
+    @property
+    def state(self) -> EngineState:
+        """The engine's current lifecycle state."""
+        return self._state.value
 
     def start(self):
         """Start the simulation, resuming the clock.
@@ -41,10 +40,7 @@ class SimulationEngine:
         Raises:
             RuntimeError: If the engine is not currently STOPPED.
         """
-        if self.state != EngineState.STOPPED:
-            raise RuntimeError(f"cannot start engine from state {self.state}")
-        self.clock.resume()
-        self.state = EngineState.RUNNING
+        self._state = self._state.start(self.clock)
 
     def pause(self):
         """Pause the simulation, freezing the clock.
@@ -52,10 +48,7 @@ class SimulationEngine:
         Raises:
             RuntimeError: If the engine is not currently RUNNING.
         """
-        if self.state != EngineState.RUNNING:
-            raise RuntimeError(f"cannot pause engine from state {self.state}")
-        self.clock.pause()
-        self.state = EngineState.PAUSED
+        self._state = self._state.pause(self.clock)
 
     def resume(self):
         """Resume a paused simulation, unfreezing the clock.
@@ -63,10 +56,7 @@ class SimulationEngine:
         Raises:
             RuntimeError: If the engine is not currently PAUSED.
         """
-        if self.state != EngineState.PAUSED:
-            raise RuntimeError(f"cannot resume engine from state {self.state}")
-        self.clock.resume()
-        self.state = EngineState.RUNNING
+        self._state = self._state.resume(self.clock)
 
     def stop(self):
         """Stop the simulation, freezing the clock at its current time.
@@ -74,15 +64,12 @@ class SimulationEngine:
         Raises:
             RuntimeError: If the engine is already STOPPED.
         """
-        if self.state == EngineState.STOPPED:
-            raise RuntimeError(f"cannot stop engine from state {self.state}")
-        self.clock.pause()
-        self.state = EngineState.STOPPED
+        self._state = self._state.stop(self.clock)
 
     def reset(self):
         """Stop the simulation and reset the clock to time zero."""
         self.clock.reset()
-        self.state = EngineState.STOPPED
+        self._state = INITIAL_STATE
 
     def add_segment(self, segment) -> None:
         """Register a conveyor segment to be advanced on every tick().
@@ -117,7 +104,7 @@ class SimulationEngine:
         """
         if real_dt < 0:
             raise ValueError("real_dt must be non-negative")
-        if self.state != EngineState.RUNNING:
+        if not self._state.advances_on_tick:
             return 0.0
 
         before = self.clock.now()
