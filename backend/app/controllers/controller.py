@@ -3,6 +3,16 @@ from app.domain.gate import Gate
 from app.domain.package import Package, PackageStatus
 from app.domain.scanner import ScanEvent, ScanResult
 from app.simulation.clock import Clock
+from app.simulation.events import (
+    CodeDetected,
+    EventBus,
+    GateErrored,
+    GateOpened,
+    PackageCreated,
+    PackageSorted,
+    ScanErrored,
+    UnknownCodeScanned,
+)
 from app.simulation.statistics import Statistics
 
 
@@ -29,10 +39,15 @@ class Controller:
         gate_clear_distances: How far past a gate's position (in meters) a
             sorted package must travel before the controller closes the
             gate behind it, keyed by gate_id.
-        clock: Simulation clock, used to timestamp events recorded in
-            statistics (see README sections 24, 34).
-        statistics: Event log and aggregate counters, updated as packages
-            move through the system.
+        clock: Simulation clock, used to timestamp published events (see
+            README sections 24, 34).
+        events: Publish/subscribe hub for domain events (see
+            app.simulation.events). The controller only ever publishes to
+            it — it does not know who, if anyone, is listening (see
+            statistics below).
+        statistics: Event log and aggregate counters. Subscribed to
+            `events` at construction time, so it stays up to date without
+            the controller calling into it directly.
     """
 
     def __init__(
@@ -44,6 +59,7 @@ class Controller:
         gate_clear_distances: dict[int, float],
         clock: Clock,
         statistics: Statistics | None = None,
+        event_bus: EventBus | None = None,
     ):
         """Initialize the controller with static routing/gate configuration.
 
@@ -57,9 +73,13 @@ class Controller:
                 meters, at which to trigger it open, keyed by gate_id.
             gate_clear_distances: Distance past each gate's position, in
                 meters, at which to close it again, keyed by gate_id.
-            clock: Simulation clock to timestamp recorded events with.
-            statistics: Event log/counters to record into. Defaults to a
-                fresh Statistics() if not given.
+            clock: Simulation clock to timestamp published events with.
+            statistics: Event log/counters, subscribed to this controller's
+                event bus. Defaults to a fresh Statistics() if not given.
+            event_bus: Publish/subscribe hub to publish domain events to.
+                Defaults to a fresh EventBus() if not given. Pass one in to
+                share it with other subscribers (see README sections 24,
+                34) outside of Statistics.
         """
         self.gates = gates
         self.gate_positions = gate_positions
@@ -67,7 +87,9 @@ class Controller:
         self.gate_lead_distances = gate_lead_distances
         self.gate_clear_distances = gate_clear_distances
         self.clock = clock
+        self.events = event_bus if event_bus is not None else EventBus()
         self.statistics = statistics if statistics is not None else Statistics()
+        self.statistics.subscribe_to(self.events)
         self.packages: dict[str, Package] = {}
         self._closing_packages: dict[int, str] = {}
 
@@ -79,7 +101,7 @@ class Controller:
                 package_id.
         """
         self.packages[package.package_id] = package
-        self.statistics.record_package_created(self.clock.now(), package.package_id)
+        self.events.publish(PackageCreated(timestamp=self.clock.now(), package_id=package.package_id))
 
     def handle_scan_result(self, result: ScanResult) -> Package:
         """Apply a scan outcome to the corresponding tracked package.
@@ -104,17 +126,17 @@ class Controller:
 
         if result.event == ScanEvent.CODE_NOT_FOUND:
             package.status = PackageStatus.ERROR
-            self.statistics.record_scan_error(now, result.package_id)
+            self.events.publish(ScanErrored(timestamp=now, package_id=result.package_id))
             return package
 
         package.barcode = result.code
         package.status = PackageStatus.SCANNED
-        self.statistics.record_code_detected(now, result.package_id, result.code)
+        self.events.publish(CodeDetected(timestamp=now, package_id=result.package_id, code=result.code))
 
         gate_id = self.routing_table.get(result.code)
         if gate_id is None:
             package.status = PackageStatus.REJECTED
-            self.statistics.record_unknown_code(now, result.package_id, result.code)
+            self.events.publish(UnknownCodeScanned(timestamp=now, package_id=result.package_id, code=result.code))
             return package
 
         package.destination = gate_id
@@ -191,14 +213,17 @@ class Controller:
                     # ERROR, see README section 25, GATE_ERROR) — the
                     # package can't be routed, so it stops here instead.
                     package.status = PackageStatus.ERROR
-                    self.statistics.record_gate_error(self.clock.now(), package_id, gate_id)
+                    now = self.clock.now()
+                    self.events.publish(GateErrored(timestamp=now, package_id=package_id, gate_id=gate_id))
                 else:
                     package.status = PackageStatus.WAITING_FOR_GATE
-                    self.statistics.record_gate_open(self.clock.now(), package_id, gate_id)
+                    now = self.clock.now()
+                    self.events.publish(GateOpened(timestamp=now, package_id=package_id, gate_id=gate_id))
         elif position >= gate_position:
             package.status = PackageStatus.SORTED
             self._closing_packages[gate_id] = package_id
-            self.statistics.record_package_sorted(self.clock.now(), package_id, gate_id)
+            now = self.clock.now()
+            self.events.publish(PackageSorted(timestamp=now, package_id=package_id, gate_id=gate_id))
 
         return package
 

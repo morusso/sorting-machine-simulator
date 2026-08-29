@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+from app.simulation import events as domain_events
+from app.simulation.events import EventBus
+
 
 @dataclass
 class Event:
@@ -32,9 +35,11 @@ class _PackageTiming:
 class Statistics:
     """Collects an event log and derives the aggregate counters/timings.
 
-    Fed by the Controller as packages move through the system (see README
-    sections 24-25, 34). Not thread-safe; expects to be driven by a single
-    simulation loop, like the rest of the engine.
+    Populated by subscribing to a Controller's EventBus (see subscribe_to())
+    rather than being called directly, so Controller does not depend on
+    this class's recording API (see README sections 24-25, 34). Not
+    thread-safe; expects to be driven by a single simulation loop, like the
+    rest of the engine.
     """
 
     def __init__(self):
@@ -47,6 +52,34 @@ class Statistics:
         self.scan_errors = 0
         self.gate_errors = 0
         self._timings: dict[str, _PackageTiming] = {}
+
+    def subscribe_to(self, bus: EventBus) -> None:
+        """Register this Statistics instance as a subscriber on bus.
+
+        Wires each domain event type (see app.simulation.events) to the
+        corresponding record_*() method, so publishing an event on bus is
+        enough to keep these counters/timings up to date.
+
+        Args:
+            bus: The EventBus to subscribe to.
+        """
+        bus.subscribe(domain_events.PackageCreated, lambda e: self.record_package_created(e.timestamp, e.package_id))
+        bus.subscribe(domain_events.ScanErrored, lambda e: self.record_scan_error(e.timestamp, e.package_id))
+        bus.subscribe(
+            domain_events.CodeDetected, lambda e: self.record_code_detected(e.timestamp, e.package_id, e.code)
+        )
+        bus.subscribe(
+            domain_events.UnknownCodeScanned,
+            lambda e: self.record_unknown_code(e.timestamp, e.package_id, e.code),
+        )
+        bus.subscribe(domain_events.GateOpened, lambda e: self.record_gate_open(e.timestamp, e.package_id, e.gate_id))
+        bus.subscribe(
+            domain_events.GateErrored, lambda e: self.record_gate_error(e.timestamp, e.package_id, e.gate_id)
+        )
+        bus.subscribe(
+            domain_events.PackageSorted,
+            lambda e: self.record_package_sorted(e.timestamp, e.package_id, e.gate_id),
+        )
 
     def record_package_created(self, timestamp: float, package_id: str) -> None:
         """Record a new package entering the system.

@@ -3,6 +3,7 @@ import pytest
 from app.domain.gate import GateState
 from app.domain.package import PackageStatus
 from app.simulation.sorting_line import DEFAULT_SCANNER_POSITION, SortingLine
+from app.simulation.sorting_line_config import SortingLineConfig
 
 
 @pytest.mark.asyncio
@@ -108,7 +109,7 @@ async def test_package_travels_from_creation_to_sorted_gate_closed():
 
 @pytest.mark.asyncio
 async def test_package_reaching_end_of_driven_segment_hands_off_to_gravity():
-    line = SortingLine(segment_length=5.0)
+    line = SortingLine(SortingLineConfig(segment_length=5.0))
     package = await line.create_package("0000000000000")  # unroutable -> rides to the end
     line.engine.start()
 
@@ -121,7 +122,7 @@ async def test_package_reaching_end_of_driven_segment_hands_off_to_gravity():
 
 @pytest.mark.asyncio
 async def test_handoff_carries_over_entry_velocity_from_the_belt():
-    line = SortingLine(segment_length=5.0)
+    line = SortingLine(SortingLineConfig(segment_length=5.0))
     package = await line.create_package("0000000000000")
     line.engine.start()
 
@@ -136,7 +137,7 @@ async def test_handoff_carries_over_entry_velocity_from_the_belt():
 
 @pytest.mark.asyncio
 async def test_light_package_stalls_on_the_gravity_segment():
-    line = SortingLine(segment_length=5.0, gravity_min_package_weight=0.5)
+    line = SortingLine(SortingLineConfig(segment_length=5.0, gravity_min_package_weight=0.5))
     package = await line.create_package("0000000000000", weight=0.1)
     line.engine.start()
 
@@ -150,10 +151,12 @@ async def test_light_package_stalls_on_the_gravity_segment():
 @pytest.mark.asyncio
 async def test_heavy_package_clears_the_gravity_segment():
     line = SortingLine(
-        segment_length=5.0,
-        gravity_length=1.0,
-        gravity_incline_angle=90.0,
-        gravity_friction_coefficient=0.0,
+        SortingLineConfig(
+            segment_length=5.0,
+            gravity_length=1.0,
+            gravity_incline_angle=90.0,
+            gravity_friction_coefficient=0.0,
+        )
     )
     package = await line.create_package("0000000000000", weight=2.0)
     line.engine.start()
@@ -167,7 +170,7 @@ async def test_heavy_package_clears_the_gravity_segment():
 
 @pytest.mark.asyncio
 async def test_snapshot_includes_gravity_segment_packages():
-    line = SortingLine(segment_length=5.0)
+    line = SortingLine(SortingLineConfig(segment_length=5.0))
     package = await line.create_package("0000000000000")
     line.engine.start()
 
@@ -190,7 +193,7 @@ def test_reset_clears_unscanned_packages():
 
 
 def test_reset_preserves_original_configuration():
-    line = SortingLine(segment_speed=1.5, scanner_error_rate=0.1)
+    line = SortingLine(SortingLineConfig(segment_speed=1.5, scanner_error_rate=0.1))
     line.reset()
     assert line.segment.speed == 1.5
     assert line.scanner.error_rate == 0.1
