@@ -197,3 +197,93 @@ def test_reset_preserves_original_configuration():
     line.reset()
     assert line.segment.speed == 1.5
     assert line.scanner.error_rate == 0.1
+
+
+@pytest.mark.asyncio
+async def test_encoder_pulse_count_increases_as_belt_moves():
+    line = SortingLine()
+    line.engine.start()
+
+    assert await line.encoder.get_pulse_count() == 0
+    await line.tick(1.0)
+    assert await line.encoder.get_pulse_count() > 0
+
+
+@pytest.mark.asyncio
+async def test_controller_position_tracks_physical_position_via_encoder():
+    line = SortingLine()
+    package = await line.create_package("5901234567890")
+    line.engine.start()
+
+    for _ in range(30):
+        await line.tick(0.1)
+
+    physical_position = await line.segment.get_package_position(package.package_id)
+    reported_position = line.controller.packages[package.package_id].position
+    # Encoder-derived, so quantized to one pulse (see SimulatedEncoder
+    # defaults: 1000 pulses/rev over a 0.5 m wheel -> 0.5 mm/pulse).
+    assert reported_position == pytest.approx(physical_position, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_entry_sensor_triggers_for_a_package_at_the_start():
+    line = SortingLine()
+    await line.create_package("5901234567890")
+
+    await line.tick(0.0)
+
+    assert await line.entry_sensor.is_triggered() is True
+
+
+@pytest.mark.asyncio
+async def test_entry_sensor_clears_once_package_moves_away():
+    line = SortingLine()
+    await line.create_package("5901234567890")
+    line.engine.start()
+
+    for _ in range(5):
+        await line.tick(0.1)
+
+    assert await line.entry_sensor.is_triggered() is False
+
+
+@pytest.mark.asyncio
+async def test_end_of_belt_sensor_triggers_near_segment_end():
+    line = SortingLine(SortingLineConfig(segment_length=1.0))
+    await line.create_package("0000000000000")
+    line.engine.start()
+
+    triggered_at_some_point = False
+    for _ in range(20):
+        await line.tick(0.1)
+        if await line.end_of_belt_sensor.is_triggered():
+            triggered_at_some_point = True
+            break
+
+    assert triggered_at_some_point
+
+
+@pytest.mark.asyncio
+async def test_snapshot_includes_encoder_and_sensors():
+    line = SortingLine()
+    line.engine.start()
+    await line.tick(1.0)
+
+    snapshot = await line.snapshot()
+    assert snapshot["encoder"]["pulse_count"] > 0
+    sensor_ids = {sensor["id"] for sensor in snapshot["sensors"]}
+    assert sensor_ids == {"SENSOR-ENTRY", "SENSOR-END-OF-BELT"}
+
+
+@pytest.mark.asyncio
+async def test_entry_reference_cleaned_up_after_handoff_to_gravity():
+    line = SortingLine(SortingLineConfig(segment_length=1.0))
+    package = await line.create_package("0000000000000")
+    line.engine.start()
+
+    for _ in range(20):
+        await line.tick(0.1)
+        if package.package_id in await line.gravity_segment.get_package_ids():
+            break
+
+    assert package.package_id not in line._entry_references

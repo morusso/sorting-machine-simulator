@@ -13,9 +13,11 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 from app.domain.conveyor import DrivenConveyorSegment
+from app.domain.encoder import Encoder
 from app.domain.gate import Gate
 from app.domain.gravity_conveyor import GravityConveyorSegment
 from app.domain.scanner import Scanner
+from app.domain.sensor import Sensor
 
 if TYPE_CHECKING:
     # Only for type hints: app/domain must not depend on app/simulation at
@@ -25,7 +27,9 @@ if TYPE_CHECKING:
 
 
 class DeviceFactory(ABC):
-    """Builds the driven/gravity segments, gates, and scanner a SortingLine drives."""
+    """Builds the driven/gravity segments, gates, scanner, encoder, and
+    sensors a SortingLine drives.
+    """
 
     @abstractmethod
     def create_driven_segment(
@@ -96,5 +100,30 @@ class DeviceFactory(ABC):
 
         Returns:
             A scanner.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_encoder(self, driven_segment: DrivenConveyorSegment) -> Encoder:
+        """Build the encoder tracking the driven segment's belt travel.
+
+        Args:
+            driven_segment: The driven segment whose belt travel this
+                encoder tracks.
+
+        Returns:
+            An encoder.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_sensor(self, sensor_id: str) -> Sensor:
+        """Build one binary presence/position sensor.
+
+        Args:
+            sensor_id: Identifier of the sensor (e.g. "SENSOR-ENTRY").
+
+        Returns:
+            A sensor.
         """
         raise NotImplementedError
