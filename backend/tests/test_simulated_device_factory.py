@@ -36,7 +36,7 @@ async def test_create_gate_returns_gate_bound_to_clock():
 
 
 def test_create_scanner_returns_configured_scanner():
-    scanner = factory.create_scanner(error_rate=0.05, rng=None)
+    scanner = factory.create_scanner(error_rate=0.05, rng=None, barcode_lookup={"PKG-1": "111"}.get)
     assert isinstance(scanner, SimulatedScanner)
     assert scanner.error_rate == 0.05
 

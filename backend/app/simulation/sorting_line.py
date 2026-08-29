@@ -101,11 +101,13 @@ class SortingLine:
         )
         self.events = self.controller.events
         self.scanner_position = config.scanner_position
-        self.scanner = self.device_factory.create_scanner(config.scanner_error_rate, config.rng)
+        self._unscanned_barcodes: dict[str, str] = {}
+        self.scanner = self.device_factory.create_scanner(
+            config.scanner_error_rate, config.rng, self._unscanned_barcodes.get
+        )
         self.encoder = self.device_factory.create_encoder(self.segment)
         self.entry_sensor = self.device_factory.create_sensor(ENTRY_SENSOR_ID)
         self.end_of_belt_sensor = self.device_factory.create_sensor(END_OF_BELT_SENSOR_ID)
-        self._unscanned_barcodes: dict[str, str] = {}
         self._package_count = 0
         self._entry_references: dict[str, tuple[int, float]] = {}
 
@@ -140,21 +142,21 @@ class SortingLine:
     async def _scan_arrived_packages(self) -> None:
         """Scan every package that has reached the scanner and apply the result.
 
-        Mirrors the SimulatedScanner docstring's expectation that
-        something with visibility into package positions calls enqueue()
-        as packages reach the scanner's location, then reads the result
-        back via scan() (see README sections 6-7).
+        Detecting that a package has reached scanner_position is what a
+        real photoelectric trigger would do (see README section 6); the
+        scanner itself never needs to be told which package it's reading
+        or what its "true" code is (see Scanner.scan()) — the true code is
+        resolved via the barcode_lookup this line's scanner was
+        constructed with (see SimulatedDeviceFactory.create_scanner()).
         """
         for package_id in await self.segment.get_package_ids():
-            barcode = self._unscanned_barcodes.get(package_id)
-            if barcode is None:
+            if package_id not in self._unscanned_barcodes:
                 continue
             position = await self.segment.get_package_position(package_id)
             if position < self.scanner_position:
                 continue
+            result = await self.scanner.scan(package_id, position)
             del self._unscanned_barcodes[package_id]
-            self.scanner.enqueue(package_id, barcode, position)
-            result = await self.scanner.scan()
             self.controller.handle_scan_result(result)
 
     async def _position_from_encoder(self, package_id: str) -> float:
