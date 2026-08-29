@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from app.domain.gravity_conveyor import GravityConveyorSegment
 from app.domain.package import PackageStatus
 from app.simulation.sorting_line import SortingLine
+from app.simulation.sorting_line_config import SortingLineConfig
 
 TICK_S = 0.1
 """Simulated-time step used to advance scenarios (see README section 21)."""
@@ -109,7 +110,7 @@ async def _run_until_settled(
 
 async def run_normal_operation(package_count: int = 1000, spacing_s: float = 1.0) -> ScenarioResult:
     """Normal operation: package_count packages at 1.0 m/s, all correctly coded."""
-    line = SortingLine(segment_speed=1.0)
+    line = SortingLine(SortingLineConfig(segment_speed=1.0))
     barcodes = _round_robin_barcodes(line.controller.routing_table)
     schedule = [(i * spacing_s, next(barcodes)) for i in range(package_count)]
     return await _run_until_settled(line, schedule)
@@ -125,7 +126,7 @@ async def run_high_speed(package_count: int = 1000, spacing_s: float = 0.5) -> S
     which is a real system limit rather than something this scenario means
     to exercise.
     """
-    line = SortingLine(segment_speed=2.0)
+    line = SortingLine(SortingLineConfig(segment_speed=2.0))
     barcodes = _round_robin_barcodes(line.controller.routing_table)
     schedule = [(i * spacing_s, next(barcodes)) for i in range(package_count)]
     return await _run_until_settled(line, schedule)
@@ -146,7 +147,7 @@ async def run_scan_errors(
     of a real one), so a correctly-read-but-unroutable code (-> REJECTED)
     is guaranteed to appear regardless of scanner randomness.
     """
-    line = SortingLine(scanner_error_rate=unreadable_rate, rng=rng)
+    line = SortingLine(SortingLineConfig(scanner_error_rate=unreadable_rate, rng=rng))
     good_barcodes = _round_robin_barcodes(line.controller.routing_table)
     incorrect_every = round(1 / incorrect_rate) if incorrect_rate > 0 else 0
     schedule = []
@@ -166,7 +167,7 @@ async def run_variable_speed(package_count: int = 20, spacing_s: float = 1.5) ->
     compress the gap between two packages that were already close to a
     gate when it happened.
     """
-    line = SortingLine(segment_speed=0.5)
+    line = SortingLine(SortingLineConfig(segment_speed=0.5))
     barcodes = _round_robin_barcodes(line.controller.routing_table)
     schedule = [(i * spacing_s, next(barcodes)) for i in range(package_count)]
 
@@ -222,7 +223,8 @@ def _build_multi_gate_line(gate_count: int, segment_length: float) -> SortingLin
     usable_length = segment_length - 5.0
     gate_positions = {gate_id: 3.0 + gate_id * (usable_length / gate_count) for gate_id in range(1, gate_count + 1)}
     routing_table = {f"{9_000_000_000_000 + gate_id}": gate_id for gate_id in range(1, gate_count + 1)}
-    return SortingLine(segment_length=segment_length, gate_positions=gate_positions, routing_table=routing_table)
+    config = SortingLineConfig(segment_length=segment_length, gate_positions=gate_positions, routing_table=routing_table)
+    return SortingLine(config)
 
 
 async def run_load_test(
