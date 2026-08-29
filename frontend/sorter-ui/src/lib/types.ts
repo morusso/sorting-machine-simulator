@@ -36,6 +36,10 @@ export interface ConveyorStatus {
   target_speed: number;
 }
 
+export interface SimulationSpeed {
+  speed_multiplier: number;
+}
+
 export interface Statistics {
   total_packages: number;
   sorted_packages: number;
@@ -79,6 +83,7 @@ export interface SimulationSnapshot {
   type: "simulation_state";
   timestamp: number;
   engine_state: EngineState;
+  speed_multiplier: number;
   conveyor: { speed: number; target_speed: number; length: number };
   packages: SnapshotPackage[];
   gates: SnapshotGate[];
