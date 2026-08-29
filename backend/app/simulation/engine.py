@@ -71,6 +71,22 @@ class SimulationEngine:
         self.clock.reset()
         self._state = INITIAL_STATE
 
+    def set_speed_multiplier(self, speed_multiplier: float) -> None:
+        """Change the simulation's virtual-time speed (see README section
+        20-21, "SPEED x1 / x2 / x10 / x100").
+
+        Takes effect immediately, in any engine state, including mid-run.
+
+        Args:
+            speed_multiplier: New factor applied to each tick's elapsed
+                simulated time, e.g. 10.0 means 1 real second of tick()
+                calls advances the simulation by 10 seconds.
+
+        Raises:
+            ValueError: If speed_multiplier is not positive.
+        """
+        self.clock.set_speed_multiplier(speed_multiplier)
+
     def add_segment(self, segment) -> None:
         """Register a conveyor segment to be advanced on every tick().
 

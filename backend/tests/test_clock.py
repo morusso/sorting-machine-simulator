@@ -53,3 +53,27 @@ def test_negative_dt_raises():
     clock = Clock()
     with pytest.raises(ValueError):
         clock.advance(-1.0)
+
+
+def test_set_speed_multiplier_changes_subsequent_advance():
+    clock = Clock()
+    clock.advance(1.0)
+    clock.set_speed_multiplier(10.0)
+    clock.advance(1.0)
+    assert clock.now() == pytest.approx(11.0)
+
+
+def test_set_speed_multiplier_takes_effect_while_paused():
+    clock = Clock()
+    clock.pause()
+    clock.set_speed_multiplier(100.0)
+    clock.resume()
+    clock.advance(1.0)
+    assert clock.now() == pytest.approx(100.0)
+
+
+@pytest.mark.parametrize("invalid_multiplier", [0.0, -1.0])
+def test_set_speed_multiplier_rejects_non_positive(invalid_multiplier):
+    clock = Clock()
+    with pytest.raises(ValueError):
+        clock.set_speed_multiplier(invalid_multiplier)

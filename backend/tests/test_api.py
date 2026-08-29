@@ -107,6 +107,23 @@ def test_set_conveyor_speed_without_speed_returns_unprocessable(client):
     assert response.status_code == 422
 
 
+def test_set_simulation_speed_updates_multiplier(client):
+    response = client.post("/api/simulation/speed", json={"speed_multiplier": 10.0})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["speed_multiplier"] == 10.0
+
+
+def test_set_simulation_speed_non_positive_returns_bad_request(client):
+    response = client.post("/api/simulation/speed", json={"speed_multiplier": 0.0})
+    assert response.status_code == 400
+
+
+def test_set_simulation_speed_without_multiplier_returns_unprocessable(client):
+    response = client.post("/api/simulation/speed", json={})
+    assert response.status_code == 422
+
+
 def test_get_statistics_starts_empty(client):
     response = client.get("/api/statistics")
     assert response.status_code == 200

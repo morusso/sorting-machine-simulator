@@ -81,6 +81,7 @@ async def test_snapshot_reflects_scanned_package():
     snapshot = await line.snapshot()
     assert snapshot["type"] == "simulation_state"
     assert snapshot["engine_state"] == "RUNNING"
+    assert snapshot["speed_multiplier"] == 1.0
     assert snapshot["conveyor"]["target_speed"] == 1.0
     assert snapshot["conveyor"]["length"] == 20.0
     assert snapshot["gates"][0]["position"] == 7.0
@@ -197,6 +198,18 @@ def test_reset_preserves_original_configuration():
     line.reset()
     assert line.segment.speed == 1.5
     assert line.scanner.error_rate == 0.1
+
+
+@pytest.mark.asyncio
+async def test_engine_speed_multiplier_scales_tick_advancement():
+    line = SortingLine()
+    line.engine.start()
+    line.engine.set_speed_multiplier(10.0)
+
+    await line.tick(1.0)
+
+    assert line.clock.now() == pytest.approx(10.0)
+    assert (await line.snapshot())["speed_multiplier"] == 10.0
 
 
 @pytest.mark.asyncio
