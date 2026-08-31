@@ -204,6 +204,28 @@ def test_get_statistics_counts_every_created_package(client):
     assert response.json()["total_packages"] == 3
 
 
+def test_get_events_starts_empty(client):
+    response = client.get("/api/events")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_events_logs_package_created(client):
+    client.post("/api/packages", json={"barcode": "5901234567890"})
+    response = client.get("/api/events")
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["event_type"] == "PACKAGE_CREATED"
+    assert body[0]["package_id"] == "PKG-000001"
+
+
+def test_get_events_cleared_by_reset(client):
+    client.post("/api/packages", json={"barcode": "5901234567890"})
+    client.post("/api/simulation/reset")
+    response = client.get("/api/events")
+    assert response.json() == []
+
+
 def test_websocket_streams_simulation_state(client):
     with client.websocket_connect("/ws") as websocket:
         message = websocket.receive_json()
