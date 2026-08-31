@@ -304,3 +304,47 @@ async def test_update_package_position_records_gate_error():
 
     await controller.update_package_position("PKG-1", 6.8)
     assert controller.statistics.gate_errors == 1
+
+
+def test_enter_safe_mode_sets_flag():
+    controller, _, _ = make_controller()
+    controller.enter_safe_mode()
+    assert controller.safe_mode is True
+
+
+def test_enter_safe_mode_records_statistics():
+    controller, _, _ = make_controller()
+    controller.enter_safe_mode()
+    assert controller.statistics.events[-1].event_type == "EMERGENCY_STOP"
+
+
+def test_enter_safe_mode_can_be_called_repeatedly_without_raising():
+    controller, _, _ = make_controller()
+    controller.enter_safe_mode()
+    controller.enter_safe_mode()
+    assert controller.safe_mode is True
+
+
+@pytest.mark.asyncio
+async def test_update_package_position_in_safe_mode_skips_gate_commands():
+    controller, gate, _ = make_controller(gate_lead_distance=0.3)
+    package = make_package()
+    package.status = PackageStatus.ASSIGNED
+    package.destination = 1
+    controller.register_package(package)
+    controller.enter_safe_mode()
+
+    updated = await controller.update_package_position("PKG-1", 6.8)
+    assert updated.status == PackageStatus.ASSIGNED
+    assert await gate.get_state() == GateState.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_update_package_position_in_safe_mode_still_records_position():
+    controller, _, _ = make_controller()
+    package = make_package()
+    controller.register_package(package)
+    controller.enter_safe_mode()
+
+    updated = await controller.update_package_position("PKG-1", 3.5)
+    assert updated.position == 3.5

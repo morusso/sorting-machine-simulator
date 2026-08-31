@@ -5,6 +5,7 @@ from app.domain.scanner import ScanEvent, ScanResult
 from app.simulation.clock import Clock
 from app.simulation.events import (
     CodeDetected,
+    EmergencyStopped,
     EventBus,
     GateErrored,
     GateOpened,
@@ -48,6 +49,10 @@ class Controller:
         statistics: Event log and aggregate counters. Subscribed to
             `events` at construction time, so it stays up to date without
             the controller calling into it directly.
+        safe_mode: Whether EMERGENCY_STOP has tripped (see README section
+            26). Once True, update_package_position() stops issuing any
+            further gate commands; there is no way back to False other
+            than rebuilding the controller (see SortingLine.reset()).
     """
 
     def __init__(
@@ -92,6 +97,7 @@ class Controller:
         self.statistics.subscribe_to(self.events)
         self.packages: dict[str, Package] = {}
         self._closing_packages: dict[int, str] = {}
+        self.safe_mode = False
 
     def register_package(self, package: Package) -> None:
         """Start tracking a package as it enters the system.
@@ -143,6 +149,17 @@ class Controller:
         package.status = PackageStatus.ASSIGNED
         return package
 
+    def enter_safe_mode(self) -> None:
+        """Stop issuing gate commands (see README section 26, EMERGENCY_STOP).
+
+        Idempotent. Publishes an EmergencyStopped event (picked up by
+        Statistics as an EMERGENCY_STOP log entry, see README section 24).
+        There is no exit_safe_mode(): recovery requires rebuilding the
+        controller via SortingLine.reset(), same as a gate stuck in ERROR.
+        """
+        self.safe_mode = True
+        self.events.publish(EmergencyStopped(timestamp=self.clock.now()))
+
     @staticmethod
     def calculate_arrival_time(current_position: float, target_position: float, speed: float) -> float:
         """Estimate time to reach target_position at a constant speed.
@@ -181,6 +198,10 @@ class Controller:
         close again once the package has cleared it by gate_clear_distances
         (see _close_gate_if_clear()).
 
+        A no-op beyond recording the position while safe_mode is set (see
+        README section 26, EMERGENCY_STOP) — no gate is opened or closed
+        once the controller has entered SAFE_MODE.
+
         Args:
             package_id: Identifier of the package to update.
             position: The package's current position, in meters.
@@ -194,6 +215,9 @@ class Controller:
         """
         package = self.packages[package_id]
         package.position = position
+
+        if self.safe_mode:
+            return package
 
         await self._close_gate_if_clear(package_id, position)
 

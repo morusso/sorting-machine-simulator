@@ -31,6 +31,13 @@ def test_record_gate_error_increments_counter():
     assert stats.events[-1].detail == "GATE-3"
 
 
+def test_record_emergency_stop_logs_event():
+    stats = Statistics()
+    stats.record_emergency_stop(3.0)
+    assert stats.events[-1].event_type == "EMERGENCY_STOP"
+    assert stats.events[-1].timestamp == 3.0
+
+
 def test_record_package_sorted_increments_counter():
     stats = Statistics()
     stats.record_package_sorted(2.0, "PKG-1", 1)

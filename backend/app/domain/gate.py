@@ -6,7 +6,11 @@ class GateState(str, Enum):
     """Lifecycle states of a sorting gate.
 
     Valid transitions are: CLOSED -> OPENING -> OPEN -> CLOSING -> CLOSED,
-    with OPENING and CLOSING also able to transition to ERROR.
+    with OPENING and CLOSING also able to transition to ERROR. Every
+    state can additionally transition to SAFE_STATE via emergency_stop()
+    (see README section 26); unlike ERROR, this is a deliberate safety
+    trip rather than a fault. Neither ERROR nor SAFE_STATE has a way back
+    out other than rebuilding the gate (see SortingLine.reset()).
     """
 
     CLOSED = "CLOSED"
@@ -14,6 +18,7 @@ class GateState(str, Enum):
     OPEN = "OPEN"
     CLOSING = "CLOSING"
     ERROR = "ERROR"
+    SAFE_STATE = "SAFE_STATE"
 
 
 class Gate(ABC):
@@ -48,5 +53,14 @@ class Gate(ABC):
 
         Returns:
             The gate's current GateState.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def emergency_stop(self):
+        """Force the gate into SAFE_STATE immediately (see README section 26).
+
+        Unlike open()/close(), this must succeed from any current state
+        and never raises — an emergency stop can never be refused.
         """
         raise NotImplementedError

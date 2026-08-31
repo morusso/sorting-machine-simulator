@@ -80,6 +80,7 @@ class Statistics:
             domain_events.PackageSorted,
             lambda e: self.record_package_sorted(e.timestamp, e.package_id, e.gate_id),
         )
+        bus.subscribe(domain_events.EmergencyStopped, lambda e: self.record_emergency_stop(e.timestamp))
 
     def record_package_created(self, timestamp: float, package_id: str) -> None:
         """Record a new package entering the system.
@@ -161,6 +162,14 @@ class Statistics:
         if timing is not None:
             timing.sorted_at = timestamp
         self.events.append(Event(timestamp, "PACKAGE_SORTED", package_id, detail=f"GATE-{gate_id}"))
+
+    def record_emergency_stop(self, timestamp: float) -> None:
+        """Record the controller entering SAFE_MODE (see README section 26).
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+        """
+        self.events.append(Event(timestamp, "EMERGENCY_STOP"))
 
     @property
     def average_scan_time(self) -> float | None:

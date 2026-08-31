@@ -77,6 +77,21 @@ class _GateStateHandler:
         """
         raise RuntimeError(f"cannot fail gate from state {self.value}")
 
+    def emergency_stop(self, gate: SimulatedGate) -> _GateStateHandler:
+        """Handle an emergency_stop() command: force SAFE_STATE unconditionally.
+
+        Unlike open()/close()/simulate_error(), this is valid from every
+        state (see README section 26) — no subclass needs to override it.
+
+        Args:
+            gate: The gate the command was issued on.
+
+        Returns:
+            The SAFE_STATE handler.
+        """
+        gate._transition_start = None
+        return _SAFE_STATE
+
 
 class _Closed(_GateStateHandler):
     value = GateState.CLOSED
@@ -128,10 +143,15 @@ class _Error(_GateStateHandler):
     value = GateState.ERROR
 
 
+class _SafeState(_GateStateHandler):
+    value = GateState.SAFE_STATE
+
+
 _CLOSED = _Closed()
 _OPENING = _Opening()
 _OPEN = _Open()
 _CLOSING = _Closing()
 _ERROR = _Error()
+_SAFE_STATE = _SafeState()
 
 INITIAL_STATE = _CLOSED

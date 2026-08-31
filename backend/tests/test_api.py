@@ -45,7 +45,7 @@ def test_create_package_without_barcode_returns_unprocessable(client):
 def test_simulation_status_starts_stopped(client):
     response = client.get("/api/simulation/status")
     assert response.status_code == 200
-    assert response.json() == {"state": "STOPPED", "time": 0.0}
+    assert response.json() == {"state": "STOPPED", "time": 0.0, "emergency_stopped": False}
 
 
 def test_simulation_status_reflects_running_after_start(client):
@@ -57,7 +57,7 @@ def test_simulation_status_reflects_running_after_start(client):
 def test_start_stop_reset_lifecycle(client):
     assert client.post("/api/simulation/start").json()["state"] == "RUNNING"
     assert client.post("/api/simulation/stop").json()["state"] == "STOPPED"
-    assert client.post("/api/simulation/reset").json() == {"state": "STOPPED", "time": 0.0}
+    assert client.post("/api/simulation/reset").json() == {"state": "STOPPED", "time": 0.0, "emergency_stopped": False}
 
 
 def test_start_twice_returns_conflict(client):
@@ -74,7 +74,7 @@ def test_stop_without_starting_returns_conflict(client):
 def test_reset_while_running_stops_and_zeroes_time(client):
     client.post("/api/simulation/start")
     response = client.post("/api/simulation/reset")
-    assert response.json() == {"state": "STOPPED", "time": 0.0}
+    assert response.json() == {"state": "STOPPED", "time": 0.0, "emergency_stopped": False}
 
 
 def test_reset_clears_packages(client):
@@ -82,6 +82,41 @@ def test_reset_clears_packages(client):
     client.post("/api/simulation/reset")
     response = client.get("/api/statistics")
     assert response.json()["total_packages"] == 0
+
+
+def test_emergency_stop_sets_flag_and_stops_the_engine(client):
+    client.post("/api/simulation/start")
+    response = client.post("/api/simulation/emergency_stop")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["emergency_stopped"] is True
+    assert body["state"] == "STOPPED"
+
+
+def test_emergency_stop_reflected_in_status(client):
+    client.post("/api/simulation/emergency_stop")
+    response = client.get("/api/simulation/status")
+    assert response.json()["emergency_stopped"] is True
+
+
+def test_start_after_emergency_stop_returns_conflict(client):
+    client.post("/api/simulation/emergency_stop")
+    response = client.post("/api/simulation/start")
+    assert response.status_code == 409
+
+
+def test_reset_after_emergency_stop_allows_start_again(client):
+    client.post("/api/simulation/emergency_stop")
+    client.post("/api/simulation/reset")
+    response = client.post("/api/simulation/start")
+    assert response.status_code == 200
+    assert response.json()["emergency_stopped"] is False
+
+
+def test_emergency_stop_from_stopped_succeeds(client):
+    response = client.post("/api/simulation/emergency_stop")
+    assert response.status_code == 200
+    assert response.json()["emergency_stopped"] is True
 
 
 def test_set_conveyor_speed(client):
