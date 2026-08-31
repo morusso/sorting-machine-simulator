@@ -3,7 +3,9 @@
 import { useState } from "react";
 import {
   createPackage,
+  pauseSimulation,
   resetSimulation,
+  resumeSimulation,
   setConveyorSpeed,
   setSimulationSpeed,
   startSimulation,
@@ -61,6 +63,8 @@ export default function Home() {
         speedMultiplier={snapshot?.speed_multiplier ?? 1.0}
         busy={busy}
         onStart={() => guarded(startSimulation)}
+        onPause={() => guarded(pauseSimulation)}
+        onResume={() => guarded(resumeSimulation)}
         onStop={() => guarded(stopSimulation)}
         onReset={() => guarded(resetSimulation)}
         onSetSpeed={(speed) => guarded(() => setConveyorSpeed(speed))}
