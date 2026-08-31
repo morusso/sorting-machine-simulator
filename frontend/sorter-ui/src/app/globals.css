@@ -249,6 +249,34 @@ input::placeholder {
   color: var(--red);
 }
 
+.sensors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sensor-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.sensor-card .sensor-state {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.sensor-card.idle .sensor-state {
+  color: var(--text-dim);
+}
+
+.sensor-card.triggered .sensor-state {
+  color: var(--green);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

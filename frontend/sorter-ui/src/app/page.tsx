@@ -15,6 +15,7 @@ import { useSimulationSocket } from "@/hooks/useSimulationSocket";
 import { ControlPanel } from "@/components/ControlPanel";
 import { CreatePackageForm } from "@/components/CreatePackageForm";
 import { ConveyorTrack } from "@/components/ConveyorTrack";
+import { EncoderSensorPanel } from "@/components/EncoderSensorPanel";
 import { GatesPanel } from "@/components/GatesPanel";
 import { GravitySegmentPanel } from "@/components/GravitySegmentPanel";
 import { PackagesTable } from "@/components/PackagesTable";
@@ -82,6 +83,7 @@ export default function Home() {
             gates={snapshot.gates}
           />
           <GatesPanel gates={snapshot.gates} />
+          <EncoderSensorPanel encoder={snapshot.encoder} sensors={snapshot.sensors} />
           <GravitySegmentPanel segment={snapshot.gravity_segment} />
           <PackagesTable packages={snapshot.packages} />
         </>

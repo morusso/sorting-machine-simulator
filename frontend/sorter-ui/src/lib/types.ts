@@ -80,6 +80,15 @@ export interface GravitySegment {
   packages: GravityPackage[];
 }
 
+export interface EncoderState {
+  pulse_count: number;
+}
+
+export interface SensorState {
+  id: string;
+  triggered: boolean;
+}
+
 export interface SimulationSnapshot {
   type: "simulation_state";
   timestamp: number;
@@ -88,6 +97,8 @@ export interface SimulationSnapshot {
   conveyor: { speed: number; target_speed: number; length: number };
   packages: SnapshotPackage[];
   gates: SnapshotGate[];
+  encoder: EncoderState;
+  sensors: SensorState[];
   gravity_segment: GravitySegment;
   statistics: Statistics;
 }
