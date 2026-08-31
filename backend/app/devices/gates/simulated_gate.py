@@ -79,3 +79,11 @@ class SimulatedGate(Gate):
             RuntimeError: If the gate is not currently OPENING or CLOSING.
         """
         self._state = self._resolve_state().simulate_error(self)
+
+    async def emergency_stop(self) -> None:
+        """Force the gate into SAFE_STATE immediately, from any state.
+
+        Unlike open()/close()/simulate_error(), this never raises — an
+        emergency stop must always succeed (see README section 26).
+        """
+        self._state = self._resolve_state().emergency_stop(self)

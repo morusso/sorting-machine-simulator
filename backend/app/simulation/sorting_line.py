@@ -4,7 +4,7 @@ from app.domain.device_factory import DeviceFactory
 from app.domain.gate import Gate
 from app.domain.package import Package, PackageStatus
 from app.simulation.clock import Clock
-from app.simulation.engine import SimulationEngine
+from app.simulation.engine import EngineState, SimulationEngine
 from app.simulation.sorting_line_config import DEFAULT_SCANNER_POSITION, SortingLineConfig  # noqa: F401 (re-exported)
 
 GATE_OPEN_TIME_MS = 300.0
@@ -110,6 +110,7 @@ class SortingLine:
         self.end_of_belt_sensor = self.device_factory.create_sensor(END_OF_BELT_SENSOR_ID)
         self._package_count = 0
         self._entry_references: dict[str, tuple[int, float]] = {}
+        self.emergency_stopped = False
 
     async def create_package(self, barcode: str, position: float = 0.0, weight: float = 1.0) -> Package:
         """Create a package carrying the given barcode and place it on the conveyor.
@@ -148,7 +149,11 @@ class SortingLine:
         or what its "true" code is (see Scanner.scan()) — the true code is
         resolved via the barcode_lookup this line's scanner was
         constructed with (see SimulatedDeviceFactory.create_scanner()).
+        A no-op while emergency_stopped is set (see README section 26,
+        EMERGENCY_STOP: "Scanner | STOP / IDLE").
         """
+        if self.emergency_stopped:
+            return
         for package_id in await self.segment.get_package_ids():
             if package_id not in self._unscanned_barcodes:
                 continue
@@ -252,6 +257,29 @@ class SortingLine:
         await self._sync_controller_from_encoder()
         await self._handoff_to_gravity_segment()
 
+    async def emergency_stop(self) -> None:
+        """Trip the emergency stop (see README section 26).
+
+        Reacts exactly as the safety table there specifies: stops the
+        driven conveyor outright, engages the gravity segment's mechanical
+        stopper (it has no motor to disable), forces every gate to
+        SAFE_STATE, idles the scanner, and puts the controller into
+        SAFE_MODE.
+
+        Always succeeds, regardless of the current engine/gate/controller
+        state — an emergency stop must never be refused. There is no
+        partial "un-emergency-stop": recovery requires a full reset() (see
+        SortingLine.reset()).
+        """
+        if self.engine.state != EngineState.STOPPED:
+            self.engine.stop()
+        self.segment.emergency_stop()
+        self.gravity_segment.engage_stopper()
+        for gate in self.gates.values():
+            await gate.emergency_stop()
+        self.emergency_stopped = True
+        self.controller.enter_safe_mode()
+
     async def snapshot(self) -> dict:
         """Build a WebSocket-ready snapshot of the current machine state.
 
@@ -268,6 +296,7 @@ class SortingLine:
             "timestamp": self.clock.now(),
             "engine_state": self.engine.state,
             "speed_multiplier": self.clock.speed_multiplier,
+            "emergency_stopped": self.emergency_stopped,
             "conveyor": {
                 "speed": self.segment.speed,
                 "target_speed": self.segment.target_speed,

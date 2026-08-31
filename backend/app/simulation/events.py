@@ -72,6 +72,13 @@ class PackageSorted:
     gate_id: int
 
 
+@dataclass(frozen=True)
+class EmergencyStopped:
+    """The controller entered SAFE_MODE (see README section 26, EMERGENCY_STOP)."""
+
+    timestamp: float
+
+
 class EventBus:
     """Synchronous publish/subscribe hub.
 

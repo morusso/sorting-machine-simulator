@@ -300,3 +300,101 @@ async def test_entry_reference_cleaned_up_after_handoff_to_gravity():
             break
 
     assert package.package_id not in line._entry_references
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_halts_the_driven_conveyor():
+    line = SortingLine()
+    line.engine.start()
+
+    await line.emergency_stop()
+
+    assert line.segment.speed == 0.0
+    assert line.segment.target_speed == 0.0
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_engages_the_gravity_stopper():
+    line = SortingLine()
+
+    await line.emergency_stop()
+
+    assert line.gravity_segment.stopper_engaged is True
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_forces_every_gate_to_safe_state():
+    line = SortingLine()
+    await line.gates[1].open()
+
+    await line.emergency_stop()
+
+    for gate in line.gates.values():
+        assert await gate.get_state() == GateState.SAFE_STATE
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_puts_the_controller_in_safe_mode():
+    line = SortingLine()
+
+    await line.emergency_stop()
+
+    assert line.controller.safe_mode is True
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_stops_the_engine():
+    line = SortingLine()
+    line.engine.start()
+
+    await line.emergency_stop()
+
+    assert line.engine.state == "STOPPED"
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_idles_the_scanner():
+    line = SortingLine()
+    package = await line.create_package("5901234567890", position=DEFAULT_SCANNER_POSITION)
+
+    await line.emergency_stop()
+    await line.tick(0.0)
+
+    assert package.package_id in line._unscanned_barcodes
+    assert line.controller.packages[package.package_id].status == PackageStatus.IN_TRANSIT
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_never_raises_from_any_engine_state():
+    stopped_line = SortingLine()
+    await stopped_line.emergency_stop()
+
+    running_line = SortingLine()
+    running_line.engine.start()
+    await running_line.emergency_stop()
+
+    paused_line = SortingLine()
+    paused_line.engine.start()
+    paused_line.engine.pause()
+    await paused_line.emergency_stop()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_reflects_emergency_stop():
+    line = SortingLine()
+    await line.emergency_stop()
+
+    snapshot = await line.snapshot()
+    assert snapshot["emergency_stopped"] is True
+
+
+@pytest.mark.asyncio
+async def test_reset_clears_emergency_stop():
+    line = SortingLine()
+    await line.emergency_stop()
+
+    line.reset()
+
+    assert line.emergency_stopped is False
+    assert line.controller.safe_mode is False
+    assert await line.gates[1].get_state() == GateState.CLOSED

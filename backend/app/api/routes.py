@@ -37,10 +37,12 @@ class SetSimulationSpeedRequest(BaseModel):
 
 
 class SimulationStatusResponse(BaseModel):
-    """Response body for GET /api/simulation/status."""
+    """Response body for GET /api/simulation/status and every simulation
+    lifecycle command (start/stop/reset/emergency_stop)."""
 
     state: EngineState
     time: float
+    emergency_stopped: bool
 
 
 class ConveyorStatusResponse(BaseModel):
@@ -78,6 +80,13 @@ def _state(request: Request) -> SortingLine:
     return request.app.state.simulation
 
 
+def _status_response(state: SortingLine) -> SimulationStatusResponse:
+    """Build a SimulationStatusResponse reflecting state's current lifecycle."""
+    return SimulationStatusResponse(
+        state=state.engine.state, time=state.clock.now(), emergency_stopped=state.emergency_stopped
+    )
+
+
 @router.post("/api/packages", response_model=Package)
 async def create_package(body: CreatePackageRequest, request: Request) -> Package:
     """Create a package with the given barcode and place it on the conveyor."""
@@ -87,19 +96,20 @@ async def create_package(body: CreatePackageRequest, request: Request) -> Packag
 @router.get("/api/simulation/status", response_model=SimulationStatusResponse)
 async def get_status(request: Request) -> SimulationStatusResponse:
     """Return the engine's current lifecycle state and simulated time."""
-    state = _state(request)
-    return SimulationStatusResponse(state=state.engine.state, time=state.clock.now())
+    return _status_response(_state(request))
 
 
 @router.post("/api/simulation/start", response_model=SimulationStatusResponse)
 async def start_simulation(request: Request) -> SimulationStatusResponse:
     """Start the simulation (see SimulationEngine.start())."""
     state = _state(request)
+    if state.emergency_stopped:
+        raise HTTPException(status_code=409, detail="cannot start: emergency stop is active, reset first")
     try:
         state.engine.start()
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return SimulationStatusResponse(state=state.engine.state, time=state.clock.now())
+    return _status_response(state)
 
 
 @router.post("/api/simulation/stop", response_model=SimulationStatusResponse)
@@ -110,7 +120,7 @@ async def stop_simulation(request: Request) -> SimulationStatusResponse:
         state.engine.stop()
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return SimulationStatusResponse(state=state.engine.state, time=state.clock.now())
+    return _status_response(state)
 
 
 @router.post("/api/simulation/reset", response_model=SimulationStatusResponse)
@@ -118,7 +128,18 @@ async def reset_simulation(request: Request) -> SimulationStatusResponse:
     """Reset the simulation to a fresh, empty state (see SortingLine.reset())."""
     state = _state(request)
     state.reset()
-    return SimulationStatusResponse(state=state.engine.state, time=state.clock.now())
+    return _status_response(state)
+
+
+@router.post("/api/simulation/emergency_stop", response_model=SimulationStatusResponse)
+async def emergency_stop(request: Request) -> SimulationStatusResponse:
+    """Trip the emergency stop (see SortingLine.emergency_stop(), README section 26).
+
+    Always succeeds. Recovery requires POST /api/simulation/reset.
+    """
+    state = _state(request)
+    await state.emergency_stop()
+    return _status_response(state)
 
 
 @router.post("/api/simulation/speed", response_model=SimulationSpeedResponse)
