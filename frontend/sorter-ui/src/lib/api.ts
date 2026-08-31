@@ -40,6 +40,14 @@ export function startSimulation(): Promise<SimulationStatus> {
   return request<SimulationStatus>("/api/simulation/start", { method: "POST" });
 }
 
+export function pauseSimulation(): Promise<SimulationStatus> {
+  return request<SimulationStatus>("/api/simulation/pause", { method: "POST" });
+}
+
+export function resumeSimulation(): Promise<SimulationStatus> {
+  return request<SimulationStatus>("/api/simulation/resume", { method: "POST" });
+}
+
 export function stopSimulation(): Promise<SimulationStatus> {
   return request<SimulationStatus>("/api/simulation/stop", { method: "POST" });
 }

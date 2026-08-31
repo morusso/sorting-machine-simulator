@@ -38,7 +38,7 @@ class SetSimulationSpeedRequest(BaseModel):
 
 class SimulationStatusResponse(BaseModel):
     """Response body for GET /api/simulation/status and every simulation
-    lifecycle command (start/stop/reset/emergency_stop)."""
+    lifecycle command (start/pause/resume/stop/reset/emergency_stop)."""
 
     state: EngineState
     time: float
@@ -107,6 +107,28 @@ async def start_simulation(request: Request) -> SimulationStatusResponse:
         raise HTTPException(status_code=409, detail="cannot start: emergency stop is active, reset first")
     try:
         state.engine.start()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _status_response(state)
+
+
+@router.post("/api/simulation/pause", response_model=SimulationStatusResponse)
+async def pause_simulation(request: Request) -> SimulationStatusResponse:
+    """Pause the simulation, freezing the clock (see SimulationEngine.pause())."""
+    state = _state(request)
+    try:
+        state.engine.pause()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _status_response(state)
+
+
+@router.post("/api/simulation/resume", response_model=SimulationStatusResponse)
+async def resume_simulation(request: Request) -> SimulationStatusResponse:
+    """Resume a paused simulation (see SimulationEngine.resume())."""
+    state = _state(request)
+    try:
+        state.engine.resume()
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _status_response(state)

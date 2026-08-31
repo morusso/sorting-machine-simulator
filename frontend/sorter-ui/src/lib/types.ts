@@ -29,6 +29,7 @@ export interface Package {
 export interface SimulationStatus {
   state: EngineState;
   time: number;
+  emergency_stopped: boolean;
 }
 
 export interface ConveyorStatus {

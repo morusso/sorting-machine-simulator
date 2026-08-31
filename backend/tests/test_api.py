@@ -71,6 +71,36 @@ def test_stop_without_starting_returns_conflict(client):
     assert response.status_code == 409
 
 
+def test_pause_and_resume_lifecycle(client):
+    client.post("/api/simulation/start")
+    response = client.post("/api/simulation/pause")
+    assert response.status_code == 200
+    assert response.json()["state"] == "PAUSED"
+
+    response = client.post("/api/simulation/resume")
+    assert response.status_code == 200
+    assert response.json()["state"] == "RUNNING"
+
+
+def test_pause_without_starting_returns_conflict(client):
+    response = client.post("/api/simulation/pause")
+    assert response.status_code == 409
+
+
+def test_resume_without_pausing_returns_conflict(client):
+    client.post("/api/simulation/start")
+    response = client.post("/api/simulation/resume")
+    assert response.status_code == 409
+
+
+def test_stop_from_paused_succeeds(client):
+    client.post("/api/simulation/start")
+    client.post("/api/simulation/pause")
+    response = client.post("/api/simulation/stop")
+    assert response.status_code == 200
+    assert response.json()["state"] == "STOPPED"
+
+
 def test_reset_while_running_stops_and_zeroes_time(client):
     client.post("/api/simulation/start")
     response = client.post("/api/simulation/reset")

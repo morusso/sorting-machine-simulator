@@ -12,6 +12,8 @@ interface Props {
   speedMultiplier: number;
   busy: boolean;
   onStart: () => Promise<void>;
+  onPause: () => Promise<void>;
+  onResume: () => Promise<void>;
   onStop: () => Promise<void>;
   onReset: () => Promise<void>;
   onSetSpeed: (speed: number) => Promise<void>;
@@ -25,6 +27,8 @@ export function ControlPanel({
   speedMultiplier,
   busy,
   onStart,
+  onPause,
+  onResume,
   onStop,
   onReset,
   onSetSpeed,
@@ -39,14 +43,28 @@ export function ControlPanel({
         <button
           className="primary"
           data-cy="start-button"
-          disabled={busy || engineState === "RUNNING"}
+          disabled={busy || engineState !== "STOPPED"}
           onClick={() => onStart()}
         >
           Start
         </button>
         <button
-          data-cy="stop-button"
+          data-cy="pause-button"
           disabled={busy || engineState !== "RUNNING"}
+          onClick={() => onPause()}
+        >
+          Pause
+        </button>
+        <button
+          data-cy="resume-button"
+          disabled={busy || engineState !== "PAUSED"}
+          onClick={() => onResume()}
+        >
+          Resume
+        </button>
+        <button
+          data-cy="stop-button"
+          disabled={busy || (engineState !== "RUNNING" && engineState !== "PAUSED")}
           onClick={() => onStop()}
         >
           Stop

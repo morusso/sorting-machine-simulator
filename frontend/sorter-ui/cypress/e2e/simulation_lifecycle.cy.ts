@@ -16,6 +16,37 @@ describe("simulation lifecycle controls", () => {
     cy.get("[data-cy=stop-button]").should("not.be.disabled");
   });
 
+  it("pauses and resumes a running simulation", () => {
+    cy.get("[data-cy=pause-button]").should("be.disabled");
+    cy.get("[data-cy=resume-button]").should("be.disabled");
+
+    cy.get("[data-cy=start-button]").click();
+    cy.get("[data-cy=engine-status]").should("contain.text", "RUNNING");
+    cy.get("[data-cy=pause-button]").should("not.be.disabled");
+    cy.get("[data-cy=start-button]").should("be.disabled");
+
+    cy.get("[data-cy=pause-button]").click();
+    cy.get("[data-cy=engine-status]").should("contain.text", "PAUSED");
+    cy.get("[data-cy=pause-button]").should("be.disabled");
+    cy.get("[data-cy=resume-button]").should("not.be.disabled");
+    cy.get("[data-cy=stop-button]").should("not.be.disabled");
+
+    cy.get("[data-cy=resume-button]").click();
+    cy.get("[data-cy=engine-status]").should("contain.text", "RUNNING");
+    cy.get("[data-cy=resume-button]").should("be.disabled");
+  });
+
+  it("stops a paused simulation", () => {
+    cy.get("[data-cy=start-button]").click();
+    cy.get("[data-cy=pause-button]").click();
+    cy.get("[data-cy=engine-status]").should("contain.text", "PAUSED");
+
+    cy.get("[data-cy=stop-button]").click();
+
+    cy.get("[data-cy=engine-status]").should("contain.text", "STOPPED");
+    cy.get("[data-cy=start-button]").should("not.be.disabled");
+  });
+
   it("stops a running simulation", () => {
     cy.get("[data-cy=start-button]").click();
     cy.get("[data-cy=engine-status]").should("contain.text", "RUNNING");
