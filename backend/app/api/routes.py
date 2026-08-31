@@ -58,6 +58,15 @@ class SimulationSpeedResponse(BaseModel):
     speed_multiplier: float
 
 
+class EventResponse(BaseModel):
+    """One entry in the event log (see README section 24)."""
+
+    timestamp: float
+    event_type: str
+    package_id: str | None
+    detail: str | None
+
+
 class StatisticsResponse(BaseModel):
     """Response body for GET /api/statistics (see README section 34)."""
 
@@ -191,3 +200,13 @@ async def get_statistics(request: Request) -> StatisticsResponse:
     """Return the aggregate statistics summary (see README section 34)."""
     state = _state(request)
     return StatisticsResponse(**state.controller.statistics.summary(state.clock.now()))
+
+
+@router.get("/api/events", response_model=list[EventResponse])
+async def get_events(request: Request) -> list[EventResponse]:
+    """Return the full event log recorded so far (see README section 24)."""
+    state = _state(request)
+    return [
+        EventResponse(timestamp=e.timestamp, event_type=e.event_type, package_id=e.package_id, detail=e.detail)
+        for e in state.controller.statistics.events
+    ]
