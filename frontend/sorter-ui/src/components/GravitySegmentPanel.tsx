@@ -9,7 +9,7 @@ export function GravitySegmentPanel({ segment }: Props) {
     `${Math.min(100, Math.max(0, (position / segment.length) * 100))}%`;
 
   return (
-    <section className="panel" data-cy="gravity-segment-panel">
+    <section className="panel" data-cy="gravity-segment-panel" data-segment-id={segment.id}>
       <h2>Gravity Buffer ({segment.packages.length})</h2>
       <div className="track">
         {segment.packages.map((pkg) => (

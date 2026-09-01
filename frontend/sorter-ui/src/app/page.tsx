@@ -84,7 +84,9 @@ export default function Home() {
           />
           <GatesPanel gates={snapshot.gates} />
           <EncoderSensorPanel encoder={snapshot.encoder} sensors={snapshot.sensors} />
-          <GravitySegmentPanel segment={snapshot.gravity_segment} />
+          {snapshot.gravity_segments.map((segment) => (
+            <GravitySegmentPanel key={segment.id} segment={segment} />
+          ))}
           <PackagesTable packages={snapshot.packages} />
         </>
       ) : (

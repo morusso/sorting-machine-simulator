@@ -257,8 +257,9 @@ def test_websocket_streams_simulation_state(client):
     assert "gates" in message
     assert len(message["gates"]) == 3
     assert "statistics" in message
-    assert message["gravity_segment"]["packages"] == []
-    assert message["gravity_segment"]["length"] > 0
+    assert len(message["gravity_segments"]) == 1
+    assert message["gravity_segments"][0]["packages"] == []
+    assert message["gravity_segments"][0]["length"] > 0
 
 
 def test_websocket_reflects_a_package_created_beforehand(client):

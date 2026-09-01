@@ -2,6 +2,7 @@ from app.controllers.controller import Controller
 from app.devices.simulated_device_factory import SimulatedDeviceFactory
 from app.domain.device_factory import DeviceFactory
 from app.domain.gate import Gate
+from app.domain.gravity_conveyor import GravityConveyorSegment
 from app.domain.package import Package, PackageStatus
 from app.simulation.clock import Clock
 from app.simulation.engine import EngineState, SimulationEngine
@@ -31,7 +32,7 @@ _check_gravity_segment_faults())."""
 
 class SortingLine:
     """Wires an engine, a driven conveyor segment, a downstream gravity
-    buffer segment, gates, a scanner, and a controller into one runnable
+    buffer chain, gates, a scanner, and a controller into one runnable
     sorting line.
 
     Used both by the REST/WebSocket API (see README sections 30-31) and by
@@ -42,14 +43,18 @@ class SortingLine:
     configurable via a DeviceFactory (see app.domain.device_factory,
     Factory Method), defaulting to SimulatedDeviceFactory.
 
-    The route is two segments end to end (see README section 4.1a): the
-    driven segment carries packages past the scanner and gates, and any
-    package that reaches its end (i.e. wasn't removed by a gate) is handed
-    off onto the gravity segment — a chute-style buffer with no gates of
-    its own, driven purely by incline/friction/weight rather than belt
-    speed. The controller only ever sees the driven segment (see
-    _handoff_to_gravity_segment()); the gravity segment needs no special
-    casing anywhere in the routing/gate logic (see README section 28).
+    The route is the driven segment followed by one or more gravity
+    segments chained end to end (see README sections 4.1a and 32,
+    `gravity_segments`): the driven segment carries packages past the
+    scanner and gates, and any package that reaches its end (i.e. wasn't
+    removed by a gate) is handed off onto the first segment in the gravity
+    chain — a chute-style buffer with no gates of its own, driven purely
+    by incline/friction/weight rather than belt speed — then on to each
+    next segment in the chain as it clears the one before it (see
+    _advance_gravity_chain()). The controller only ever sees the driven
+    segment (see _handoff_to_gravity_segment()); the gravity chain needs
+    no special casing anywhere in the routing/gate logic (see README
+    section 28).
     """
 
     def __init__(
@@ -83,15 +88,22 @@ class SortingLine:
             max_speed=config.segment_max_speed,
             acceleration=config.segment_acceleration,
         )
-        self.gravity_segment = self.device_factory.create_gravity_segment(
-            length=config.gravity_length,
-            incline_angle=config.gravity_incline_angle,
-            friction_coefficient=config.gravity_friction_coefficient,
-            roller_diameter=config.gravity_roller_diameter,
-            min_package_weight=config.gravity_min_package_weight,
-        )
         self.engine.add_segment(self.segment)
-        self.engine.add_segment(self.gravity_segment)
+
+        self.gravity_segments: dict[int, GravityConveyorSegment] = {}
+        self._gravity_chain: list[int] = [
+            spec.id for spec in sorted(config.gravity_segments, key=lambda spec: spec.position_start)
+        ]
+        for spec in config.gravity_segments:
+            segment = self.device_factory.create_gravity_segment(
+                length=spec.length,
+                incline_angle=spec.incline_angle,
+                friction_coefficient=spec.friction_coefficient,
+                roller_diameter=spec.roller_diameter,
+                min_package_weight=spec.min_package_weight,
+            )
+            self.gravity_segments[spec.id] = segment
+            self.engine.add_segment(segment)
 
         self.gate_positions = config.gate_positions
         self.gates: dict[int, Gate] = {
@@ -110,7 +122,9 @@ class SortingLine:
         )
         self.events = self.controller.events
         self.scanner_position = config.scanner_position
+        self.scanner_detection_delay_s = config.scanner_detection_delay_ms / 1000
         self._unscanned_barcodes: dict[str, str] = {}
+        self._pending_scans: dict[str, float] = {}
         self.scanner = self.device_factory.create_scanner(
             config.scanner_error_rate, config.rng, self._unscanned_barcodes.get
         )
@@ -125,6 +139,16 @@ class SortingLine:
         self._reported_sensor_faults: set[str] = set()
         self._gravity_stall_timers: dict[str, float] = {}
         self._gravity_alerted: set[str] = set()
+
+    @property
+    def gravity_segment(self) -> GravityConveyorSegment:
+        """The first segment in the gravity chain (see gravity_segments).
+
+        A convenience accessor for the common single-segment
+        configuration — a package leaving the driven segment always
+        enters this one first (see _handoff_to_gravity_segment()).
+        """
+        return self.gravity_segments[self._gravity_chain[0]]
 
     async def create_package(self, barcode: str, position: float = 0.0, weight: float = 1.0) -> Package:
         """Create a package carrying the given barcode and place it on the conveyor.
@@ -155,7 +179,8 @@ class SortingLine:
         return package
 
     async def _scan_arrived_packages(self) -> None:
-        """Scan every package that has reached the scanner and apply the result.
+        """Trigger the scanner for newly-arrived packages, and resolve any
+        whose read delay has elapsed.
 
         Detecting that a package has reached scanner_position is what a
         real photoelectric trigger would do (see README section 6); the
@@ -163,17 +188,28 @@ class SortingLine:
         or what its "true" code is (see Scanner.scan()) — the true code is
         resolved via the barcode_lookup this line's scanner was
         constructed with (see SimulatedDeviceFactory.create_scanner()).
-        A no-op while emergency_stopped is set (see README section 26,
-        EMERGENCY_STOP: "Scanner | STOP / IDLE").
+        The actual read is not applied the same instant a package crosses
+        scanner_position: it's deferred by scanner_detection_delay_s, like
+        a real scanner's decode latency (see README sections 7 and 32,
+        "read delay"). A no-op while emergency_stopped is set (see README
+        section 26, EMERGENCY_STOP: "Scanner | STOP / IDLE").
         """
         if self.emergency_stopped:
             return
+
         for package_id in await self.segment.get_package_ids():
-            if package_id not in self._unscanned_barcodes:
+            if package_id not in self._unscanned_barcodes or package_id in self._pending_scans:
                 continue
             position = await self.segment.get_package_position(package_id)
             if position < self.scanner_position:
                 continue
+            self._pending_scans[package_id] = self.clock.now() + self.scanner_detection_delay_s
+
+        now = self.clock.now()
+        ready = [package_id for package_id, ready_at in self._pending_scans.items() if now >= ready_at]
+        for package_id in ready:
+            del self._pending_scans[package_id]
+            position = await self.segment.get_package_position(package_id)
             result = await self.scanner.scan(package_id, position)
             del self._unscanned_barcodes[package_id]
             self.controller.handle_scan_result(result)
@@ -263,6 +299,8 @@ class SortingLine:
                 self.controller.mark_lost(package_id)
             self.segment.remove_package(package_id)
             del self._entry_references[package_id]
+            self._unscanned_barcodes.pop(package_id, None)
+            self._pending_scans.pop(package_id, None)
             self.gravity_segment.add_package(
                 package_id, weight=package.weight, position=0.0, velocity=self.segment.speed
             )
@@ -289,47 +327,76 @@ class SortingLine:
                 self._reported_sensor_faults.add(sensor.sensor_id)
                 self.controller.record_sensor_error(sensor.sensor_id)
 
+    async def _advance_gravity_chain(self) -> None:
+        """Hand packages off between consecutive segments in the gravity chain.
+
+        A package that reaches the end of a gravity segment that isn't
+        the last one in gravity_segments moves on to the next segment in
+        chain order, carrying over its velocity (see README section 4.1a:
+        exit speed depends on entry speed) — the same handoff
+        _handoff_to_gravity_segment() does from the driven segment, one
+        level down. A package on the last segment in the chain just stays
+        there once it clears it; there's nothing further to hand off to.
+        """
+        for current_id, next_id in zip(self._gravity_chain, self._gravity_chain[1:]):
+            current = self.gravity_segments[current_id]
+            next_segment = self.gravity_segments[next_id]
+            for package_id in await current.get_package_ids():
+                position = await current.get_package_position(package_id)
+                if position < current.length:
+                    continue
+                velocity = await current.get_package_velocity(package_id)
+                weight = self.controller.packages[package_id].weight
+                current.remove_package(package_id)
+                next_segment.add_package(package_id, weight=weight, position=0.0, velocity=velocity)
+
     async def _check_gravity_segment_faults(self, dt: float) -> None:
-        """Detect packages stalling/piling up on the gravity segment.
+        """Detect packages stalling/piling up anywhere in the gravity chain.
 
         A package with zero velocity that hasn't yet cleared the segment
-        is timed; once it's been motionless for GRAVITY_STALL_TIMEOUT_S,
-        it's reported once as GRAVITY_SEGMENT_JAM if it's resting against
-        another stopped package ahead of it (a pile-up, see
-        GravityConveyorSegment.advance()'s overtake prevention), or
-        GRAVITY_SEGMENT_STALL otherwise (stopped on its own, e.g. too
-        light for the segment's incline/friction, see README section 25).
+        it's on is timed; once it's been motionless for
+        GRAVITY_STALL_TIMEOUT_S, it's reported once as GRAVITY_SEGMENT_JAM
+        if it's resting against another stopped package ahead of it (a
+        pile-up, see GravityConveyorSegment.advance()'s overtake
+        prevention), or GRAVITY_SEGMENT_STALL otherwise (stopped on its
+        own, e.g. too light for that segment's incline/friction, see
+        README section 25).
 
         Args:
             dt: Elapsed simulated time since the last check, in seconds.
         """
-        package_ids = await self.gravity_segment.get_package_ids()
-        positions = {pid: await self.gravity_segment.get_package_position(pid) for pid in package_ids}
-        velocities = {pid: await self.gravity_segment.get_package_velocity(pid) for pid in package_ids}
-        ordered = sorted(package_ids, key=lambda pid: -positions[pid])
+        all_package_ids: set[str] = set()
 
-        for stale in set(self._gravity_stall_timers) - set(package_ids):
+        for segment_id in self._gravity_chain:
+            segment = self.gravity_segments[segment_id]
+            package_ids = await segment.get_package_ids()
+            all_package_ids.update(package_ids)
+            positions = {pid: await segment.get_package_position(pid) for pid in package_ids}
+            velocities = {pid: await segment.get_package_velocity(pid) for pid in package_ids}
+            ordered = sorted(package_ids, key=lambda pid: -positions[pid])
+
+            for index, package_id in enumerate(ordered):
+                if velocities[package_id] != 0.0 or positions[package_id] >= segment.length:
+                    self._gravity_stall_timers.pop(package_id, None)
+                    self._gravity_alerted.discard(package_id)
+                    continue
+
+                self._gravity_stall_timers[package_id] = self._gravity_stall_timers.get(package_id, 0.0) + dt
+                if package_id in self._gravity_alerted:
+                    continue
+                if self._gravity_stall_timers[package_id] < GRAVITY_STALL_TIMEOUT_S:
+                    continue
+
+                self._gravity_alerted.add(package_id)
+                blocked_by_package_ahead = index > 0 and positions[package_id] == positions[ordered[index - 1]]
+                if blocked_by_package_ahead:
+                    self.controller.record_gravity_jam(package_id)
+                else:
+                    self.controller.record_gravity_stall(package_id)
+
+        for stale in set(self._gravity_stall_timers) - all_package_ids:
             del self._gravity_stall_timers[stale]
             self._gravity_alerted.discard(stale)
-
-        for index, package_id in enumerate(ordered):
-            if velocities[package_id] != 0.0 or positions[package_id] >= self.gravity_segment.length:
-                self._gravity_stall_timers.pop(package_id, None)
-                self._gravity_alerted.discard(package_id)
-                continue
-
-            self._gravity_stall_timers[package_id] = self._gravity_stall_timers.get(package_id, 0.0) + dt
-            if package_id in self._gravity_alerted:
-                continue
-            if self._gravity_stall_timers[package_id] < GRAVITY_STALL_TIMEOUT_S:
-                continue
-
-            self._gravity_alerted.add(package_id)
-            blocked_by_package_ahead = index > 0 and positions[package_id] == positions[ordered[index - 1]]
-            if blocked_by_package_ahead:
-                self.controller.record_gravity_jam(package_id)
-            else:
-                self.controller.record_gravity_stall(package_id)
 
     async def tick(self, real_dt: float) -> None:
         """Advance the engine, scan arrived packages, sync the controller,
@@ -345,6 +412,7 @@ class SortingLine:
         await self._update_sensors()
         await self._sync_controller_from_encoder()
         await self._handoff_to_gravity_segment()
+        await self._advance_gravity_chain()
         self._check_device_faults()
         await self._check_gravity_segment_faults(sim_dt)
 
@@ -352,10 +420,10 @@ class SortingLine:
         """Trip the emergency stop (see README section 26).
 
         Reacts exactly as the safety table there specifies: stops the
-        driven conveyor outright, engages the gravity segment's mechanical
-        stopper (it has no motor to disable), forces every gate to
-        SAFE_STATE, idles the scanner, and puts the controller into
-        SAFE_MODE.
+        driven conveyor outright, engages every gravity segment's
+        mechanical stopper (none of them have a motor to disable), forces
+        every gate to SAFE_STATE, idles the scanner, and puts the
+        controller into SAFE_MODE.
 
         Always succeeds, regardless of the current engine/gate/controller
         state — an emergency stop must never be refused. There is no
@@ -365,7 +433,8 @@ class SortingLine:
         if self.engine.state != EngineState.STOPPED:
             self.engine.stop()
         self.segment.emergency_stop()
-        self.gravity_segment.engage_stopper()
+        for gravity_segment in self.gravity_segments.values():
+            gravity_segment.engage_stopper()
         for gate in self.gates.values():
             await gate.emergency_stop()
         self.emergency_stopped = True
@@ -378,9 +447,10 @@ class SortingLine:
 
         Returns:
             A dict with the engine's lifecycle state, the conveyor's
-            speed/length, every tracked package's position/gate/status,
-            every gate's position/state, the gravity buffer's packages,
-            and the aggregate statistics summary.
+            speed/length, every tracked package's position/gate/status/eta
+            (see Controller.estimate_gate_eta()), every gate's
+            position/state, each gravity segment's packages in chain
+            order, and the aggregate statistics summary.
         """
         return {
             "type": "simulation_state",
@@ -399,6 +469,7 @@ class SortingLine:
                     "position": package.position,
                     "gate": package.destination,
                     "status": package.status,
+                    "eta": self.controller.estimate_gate_eta(package.package_id, self.segment.speed),
                 }
                 for package in self.controller.packages.values()
             ],
@@ -411,17 +482,21 @@ class SortingLine:
                 {"id": ENTRY_SENSOR_ID, "triggered": await self.entry_sensor.is_triggered()},
                 {"id": END_OF_BELT_SENSOR_ID, "triggered": await self.end_of_belt_sensor.is_triggered()},
             ],
-            "gravity_segment": {
-                "length": self.gravity_segment.length,
-                "packages": [
-                    {
-                        "id": package_id,
-                        "position": await self.gravity_segment.get_package_position(package_id),
-                        "velocity": await self.gravity_segment.get_package_velocity(package_id),
-                    }
-                    for package_id in await self.gravity_segment.get_package_ids()
-                ],
-            },
+            "gravity_segments": [
+                {
+                    "id": segment_id,
+                    "length": self.gravity_segments[segment_id].length,
+                    "packages": [
+                        {
+                            "id": package_id,
+                            "position": await self.gravity_segments[segment_id].get_package_position(package_id),
+                            "velocity": await self.gravity_segments[segment_id].get_package_velocity(package_id),
+                        }
+                        for package_id in await self.gravity_segments[segment_id].get_package_ids()
+                    ],
+                }
+                for segment_id in self._gravity_chain
+            ],
             "statistics": self.controller.statistics.summary(self.clock.now()),
         }
 

@@ -3,7 +3,7 @@ import pytest
 from app.domain.gate import GateState
 from app.domain.package import PackageStatus
 from app.simulation.sorting_line import DEFAULT_SCANNER_POSITION, SortingLine
-from app.simulation.sorting_line_config import SortingLineConfig
+from app.simulation.sorting_line_config import GravitySegmentConfig, SortingLineConfig
 
 
 @pytest.mark.asyncio
@@ -49,6 +49,7 @@ async def test_tick_scans_package_on_reaching_scanner_position():
     line.engine.start()
 
     await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)  # let the read delay elapse
 
     updated = line.controller.packages[package.package_id]
     assert updated.barcode == "5901234567890"
@@ -64,6 +65,7 @@ async def test_tick_rejects_package_with_unroutable_barcode():
     line.engine.start()
 
     await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)  # let the read delay elapse
 
     updated = line.controller.packages[package.package_id]
     assert updated.barcode == "0000000000000"
@@ -72,11 +74,75 @@ async def test_tick_rejects_package_with_unroutable_barcode():
 
 
 @pytest.mark.asyncio
+async def test_scan_result_is_not_applied_before_the_read_delay_elapses():
+    line = SortingLine()
+    package = await line.create_package("5901234567890")
+    line.engine.start()
+
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+
+    updated = line.controller.packages[package.package_id]
+    assert updated.barcode is None
+    assert updated.status == PackageStatus.IN_TRANSIT
+    assert package.package_id in line._pending_scans
+    assert package.package_id in line._unscanned_barcodes
+
+
+@pytest.mark.asyncio
+async def test_scan_result_applies_once_the_read_delay_elapses():
+    line = SortingLine()
+    package = await line.create_package("5901234567890")
+    line.engine.start()
+
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)
+
+    updated = line.controller.packages[package.package_id]
+    assert updated.barcode == "5901234567890"
+    assert package.package_id not in line._pending_scans
+
+
+@pytest.mark.asyncio
+async def test_zero_read_delay_scans_within_the_same_tick():
+    line = SortingLine(SortingLineConfig(scanner_detection_delay_ms=0.0))
+    package = await line.create_package("5901234567890")
+    line.engine.start()
+
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+
+    updated = line.controller.packages[package.package_id]
+    assert updated.barcode == "5901234567890"
+
+
+@pytest.mark.asyncio
+async def test_default_scanner_detection_delay_matches_the_readme():
+    line = SortingLine()
+    assert line.scanner_detection_delay_s == pytest.approx(0.05)
+
+
+@pytest.mark.asyncio
+async def test_package_reaching_the_end_before_its_scan_resolves_is_cleaned_up():
+    line = SortingLine(
+        SortingLineConfig(segment_length=3.0, scanner_position=1.0, scanner_detection_delay_ms=1_000_000.0)
+    )
+    package = await line.create_package("0000000000000")
+    line.engine.start()
+
+    for _ in range(50):
+        await line.tick(0.1)
+
+    assert package.package_id not in line._pending_scans
+    assert package.package_id not in line._unscanned_barcodes
+    assert line.controller.packages[package.package_id].status == PackageStatus.LOST
+
+
+@pytest.mark.asyncio
 async def test_snapshot_reflects_scanned_package():
     line = SortingLine()
     await line.create_package("5901234567890")
     line.engine.start()
     await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)  # let the read delay elapse
 
     snapshot = await line.snapshot()
     assert snapshot["type"] == "simulation_state"
@@ -138,7 +204,12 @@ async def test_handoff_carries_over_entry_velocity_from_the_belt():
 
 @pytest.mark.asyncio
 async def test_light_package_stalls_on_the_gravity_segment():
-    line = SortingLine(SortingLineConfig(segment_length=5.0, gravity_min_package_weight=0.5))
+    line = SortingLine(
+        SortingLineConfig(
+            segment_length=5.0,
+            gravity_segments=[GravitySegmentConfig(id=1, position_start=5.0, min_package_weight=0.5)],
+        )
+    )
     package = await line.create_package("0000000000000", weight=0.1)
     line.engine.start()
 
@@ -154,9 +225,9 @@ async def test_heavy_package_clears_the_gravity_segment():
     line = SortingLine(
         SortingLineConfig(
             segment_length=5.0,
-            gravity_length=1.0,
-            gravity_incline_angle=90.0,
-            gravity_friction_coefficient=0.0,
+            gravity_segments=[
+                GravitySegmentConfig(id=1, position_start=5.0, length=1.0, incline_angle=90.0, friction_coefficient=0.0)
+            ],
         )
     )
     package = await line.create_package("0000000000000", weight=2.0)
@@ -167,6 +238,103 @@ async def test_heavy_package_clears_the_gravity_segment():
 
     position = await line.gravity_segment.get_package_position(package.package_id)
     assert position == pytest.approx(1.0)
+
+
+def test_default_gravity_segments_is_a_single_chain_entry():
+    line = SortingLine()
+    assert line._gravity_chain == [1]
+    assert line.gravity_segment is line.gravity_segments[1]
+
+
+def test_gravity_chain_orders_by_position_start_not_list_order():
+    line = SortingLine(
+        SortingLineConfig(
+            gravity_segments=[
+                GravitySegmentConfig(id=2, position_start=25.0),
+                GravitySegmentConfig(id=1, position_start=20.0),
+            ]
+        )
+    )
+    assert line._gravity_chain == [1, 2]
+    assert line.gravity_segment is line.gravity_segments[1]
+
+
+@pytest.mark.asyncio
+async def test_package_clearing_the_first_gravity_segment_moves_to_the_next():
+    line = SortingLine(
+        SortingLineConfig(
+            segment_length=5.0,
+            gravity_segments=[
+                GravitySegmentConfig(id=1, position_start=5.0, length=1.0, incline_angle=90.0, friction_coefficient=0.0),
+                GravitySegmentConfig(id=2, position_start=6.0, length=1.0, incline_angle=90.0, friction_coefficient=0.0),
+            ],
+        )
+    )
+    package = await line.create_package("0000000000000", weight=1.0)
+    line.engine.start()
+
+    for _ in range(100):
+        await line.tick(0.1)
+        if package.package_id in await line.gravity_segments[2].get_package_ids():
+            break
+
+    assert package.package_id in await line.gravity_segments[2].get_package_ids()
+    assert package.package_id not in await line.gravity_segments[1].get_package_ids()
+
+
+@pytest.mark.asyncio
+async def test_gravity_chain_handoff_carries_over_velocity():
+    line = SortingLine(
+        SortingLineConfig(
+            segment_length=5.0,
+            gravity_segments=[
+                GravitySegmentConfig(id=1, position_start=5.0, length=0.5, incline_angle=90.0, friction_coefficient=0.0),
+                GravitySegmentConfig(id=2, position_start=5.5, length=1.0, incline_angle=0.0, friction_coefficient=0.0),
+            ],
+        )
+    )
+    package = await line.create_package("0000000000000", weight=1.0)
+    line.engine.start()
+
+    for _ in range(100):
+        await line.tick(0.1)
+        if package.package_id in await line.gravity_segments[2].get_package_ids():
+            break
+
+    velocity = await line.gravity_segments[2].get_package_velocity(package.package_id)
+    assert velocity > 0.0
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_engages_every_gravity_segments_stopper():
+    line = SortingLine(
+        SortingLineConfig(
+            gravity_segments=[
+                GravitySegmentConfig(id=1, position_start=20.0),
+                GravitySegmentConfig(id=2, position_start=25.0),
+            ]
+        )
+    )
+
+    await line.emergency_stop()
+
+    assert all(segment.stopper_engaged for segment in line.gravity_segments.values())
+
+
+@pytest.mark.asyncio
+async def test_snapshot_lists_every_gravity_segment_in_chain_order():
+    line = SortingLine(
+        SortingLineConfig(
+            gravity_segments=[
+                GravitySegmentConfig(id=2, position_start=25.0),
+                GravitySegmentConfig(id=1, position_start=20.0),
+            ]
+        )
+    )
+
+    snapshot = await line.snapshot()
+
+    assert [segment["id"] for segment in snapshot["gravity_segments"]] == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -181,8 +349,10 @@ async def test_snapshot_includes_gravity_segment_packages():
             break
 
     snapshot = await line.snapshot()
-    assert snapshot["gravity_segment"]["length"] == line.gravity_segment.length
-    ids = [p["id"] for p in snapshot["gravity_segment"]["packages"]]
+    assert len(snapshot["gravity_segments"]) == 1
+    assert snapshot["gravity_segments"][0]["id"] == 1
+    assert snapshot["gravity_segments"][0]["length"] == line.gravity_segment.length
+    ids = [p["id"] for p in snapshot["gravity_segments"][0]["packages"]]
     assert package.package_id in ids
 
 
@@ -380,6 +550,29 @@ async def test_emergency_stop_never_raises_from_any_engine_state():
 
 
 @pytest.mark.asyncio
+async def test_snapshot_reports_eta_for_an_assigned_package():
+    line = SortingLine()
+    await line.create_package("5901234567890")  # routes to gate 1 at position 7.0
+    line.engine.start()
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)  # let the read delay elapse
+
+    snapshot = await line.snapshot()
+    remaining = 7.0 - snapshot["packages"][0]["position"]
+    assert snapshot["packages"][0]["eta"] == pytest.approx(remaining / line.segment.speed)
+
+
+@pytest.mark.asyncio
+async def test_snapshot_reports_no_eta_before_a_package_is_assigned():
+    line = SortingLine()
+    await line.create_package("5901234567890")
+
+    snapshot = await line.snapshot()
+
+    assert snapshot["packages"][0]["eta"] is None
+
+
+@pytest.mark.asyncio
 async def test_package_overshooting_its_gate_in_one_tick_is_marked_lost():
     line = SortingLine()
     package = await line.create_package("5901234567890")  # routes to gate 1 at position 7.0
@@ -432,7 +625,9 @@ async def test_encoder_fault_is_reported_once():
 
 @pytest.mark.asyncio
 async def test_stalled_light_package_on_gravity_segment_is_reported():
-    line = SortingLine(SortingLineConfig(gravity_min_package_weight=0.5))
+    line = SortingLine(
+        SortingLineConfig(gravity_segments=[GravitySegmentConfig(id=1, position_start=20.0, min_package_weight=0.5)])
+    )
     line.engine.start()
     line.gravity_segment.add_package("PKG-1", weight=0.1, position=1.0)
 
@@ -446,7 +641,13 @@ async def test_stalled_light_package_on_gravity_segment_is_reported():
 @pytest.mark.asyncio
 async def test_package_blocked_by_a_stalled_package_ahead_is_reported_as_jam():
     line = SortingLine(
-        SortingLineConfig(gravity_min_package_weight=0.5, gravity_incline_angle=45.0, gravity_friction_coefficient=0.0)
+        SortingLineConfig(
+            gravity_segments=[
+                GravitySegmentConfig(
+                    id=1, position_start=20.0, min_package_weight=0.5, incline_angle=45.0, friction_coefficient=0.0
+                )
+            ]
+        )
     )
     line.engine.start()
     line.gravity_segment.add_package("PKG-FRONT", weight=0.1, position=1.0)  # too light to move; stays put

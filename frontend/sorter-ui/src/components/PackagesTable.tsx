@@ -4,6 +4,10 @@ interface Props {
   packages: SnapshotPackage[];
 }
 
+function formatEta(eta: number | null): string {
+  return eta === null ? "—" : `${eta.toFixed(1)} s`;
+}
+
 export function PackagesTable({ packages }: Props) {
   return (
     <section className="panel" data-cy="packages-panel">
@@ -18,6 +22,7 @@ export function PackagesTable({ packages }: Props) {
               <th>Position (m)</th>
               <th>Gate</th>
               <th>Status</th>
+              <th>ETA</th>
             </tr>
           </thead>
           <tbody>
@@ -27,6 +32,7 @@ export function PackagesTable({ packages }: Props) {
                 <td>{pkg.position.toFixed(2)}</td>
                 <td>{pkg.gate ?? "—"}</td>
                 <td data-cy="package-status">{pkg.status}</td>
+                <td data-cy="package-eta">{formatEta(pkg.eta)}</td>
               </tr>
             ))}
           </tbody>

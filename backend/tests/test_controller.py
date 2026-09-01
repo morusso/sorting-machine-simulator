@@ -106,6 +106,42 @@ def test_calculate_arrival_time_non_positive_speed_raises():
         Controller.calculate_arrival_time(current_position=0.0, target_position=1.0, speed=0.0)
 
 
+def test_estimate_gate_eta_uses_calculate_arrival_time():
+    controller, _, _ = make_controller()
+    package = make_package()
+    package.status = PackageStatus.ASSIGNED
+    package.destination = 1
+    package.position = 4.0
+    controller.register_package(package)
+
+    assert controller.estimate_gate_eta("PKG-1", current_speed=1.5) == pytest.approx(2.0)
+
+
+def test_estimate_gate_eta_none_without_a_destination():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    assert controller.estimate_gate_eta("PKG-1", current_speed=1.0) is None
+
+
+def test_estimate_gate_eta_none_when_belt_is_stopped():
+    controller, _, _ = make_controller()
+    package = make_package()
+    package.status = PackageStatus.ASSIGNED
+    package.destination = 1
+    controller.register_package(package)
+    assert controller.estimate_gate_eta("PKG-1", current_speed=0.0) is None
+
+
+def test_estimate_gate_eta_none_once_past_the_gate():
+    controller, _, _ = make_controller()
+    package = make_package()
+    package.status = PackageStatus.WAITING_FOR_GATE
+    package.destination = 1
+    package.position = 7.0
+    controller.register_package(package)
+    assert controller.estimate_gate_eta("PKG-1", current_speed=1.0) is None
+
+
 @pytest.mark.asyncio
 async def test_update_package_position_opens_gate_within_lead_distance():
     controller, gate, _ = make_controller(gate_lead_distance=0.3)

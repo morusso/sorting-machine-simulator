@@ -259,6 +259,36 @@ class Controller:
             raise ValueError("speed must be positive to estimate arrival time")
         return distance / speed
 
+    def estimate_gate_eta(self, package_id: str, current_speed: float) -> float | None:
+        """Estimate a package's time to reach its destination gate (e.g. for an HMI ETA display).
+
+        Wraps calculate_arrival_time() with the guards it deliberately
+        leaves to the caller, so this returns None for any package/speed
+        combination that wouldn't have a meaningful answer, rather than
+        raising: no destination gate yet, already at or past the gate, or
+        a stopped/reversed belt.
+
+        Args:
+            package_id: Identifier of the package to estimate.
+            current_speed: The package's current transport segment's
+                speed, in m/s (the controller does not track this itself
+                — see README section 28).
+
+        Returns:
+            Estimated time to reach the gate, in seconds, or None if
+            there's no destination gate or no positive current_speed.
+
+        Raises:
+            KeyError: If package_id is not a tracked package.
+        """
+        package = self.packages[package_id]
+        if package.destination is None or current_speed <= 0:
+            return None
+        gate_position = self.gate_positions[package.destination]
+        if package.position >= gate_position:
+            return None
+        return self.calculate_arrival_time(package.position, gate_position, current_speed)
+
     async def update_package_position(self, package_id: str, position: float) -> Package:
         """Report a package's current position and trigger its gate if due.
 
