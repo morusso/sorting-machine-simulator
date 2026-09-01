@@ -49,6 +49,13 @@ export interface Statistics {
   scan_errors: number;
   gate_errors: number;
   error_packages: number;
+  duplicate_scans: number;
+  lost_packages: number;
+  gravity_segment_stalls: number;
+  gravity_segment_jams: number;
+  conveyor_stops: number;
+  sensor_errors: number;
+  encoder_errors: number;
   average_scan_time: number | null;
   average_sort_time: number | null;
   throughput: number;
