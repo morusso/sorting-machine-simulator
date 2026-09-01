@@ -68,6 +68,7 @@ export interface SnapshotPackage {
   position: number;
   gate: number | null;
   status: PackageStatus;
+  eta: number | null;
 }
 
 export interface SnapshotGate {
@@ -83,6 +84,7 @@ export interface GravityPackage {
 }
 
 export interface GravitySegment {
+  id: number;
   length: number;
   packages: GravityPackage[];
 }
@@ -106,6 +108,6 @@ export interface SimulationSnapshot {
   gates: SnapshotGate[];
   encoder: EncoderState;
   sensors: SensorState[];
-  gravity_segment: GravitySegment;
+  gravity_segments: GravitySegment[];
   statistics: Statistics;
 }
