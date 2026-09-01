@@ -19,6 +19,15 @@ END_OF_BELT_SENSOR_RANGE_M = 0.1
 """How close to the segment's end a package must be to break the
 end-of-belt sensor's beam, in meters (see README section 10)."""
 
+TERMINAL_PACKAGE_STATUSES = (PackageStatus.SORTED, PackageStatus.REJECTED, PackageStatus.ERROR, PackageStatus.LOST)
+"""Statuses past which a package no longer needs anything done to it (see
+_handoff_to_gravity_segment(), app.simulation.scenarios._is_settled())."""
+
+GRAVITY_STALL_TIMEOUT_S = 2.0
+"""How long a package must sit motionless on the gravity segment before
+it's reported as GRAVITY_SEGMENT_STALL/_JAM (see README section 25,
+_check_gravity_segment_faults())."""
+
 
 class SortingLine:
     """Wires an engine, a driven conveyor segment, a downstream gravity
@@ -111,6 +120,11 @@ class SortingLine:
         self._package_count = 0
         self._entry_references: dict[str, tuple[int, float]] = {}
         self.emergency_stopped = False
+        self._conveyor_fault_reported = False
+        self._encoder_fault_reported = False
+        self._reported_sensor_faults: set[str] = set()
+        self._gravity_stall_timers: dict[str, float] = {}
+        self._gravity_alerted: set[str] = set()
 
     async def create_package(self, barcode: str, position: float = 0.0, weight: float = 1.0) -> Package:
         """Create a package carrying the given barcode and place it on the conveyor.
@@ -231,31 +245,108 @@ class SortingLine:
         velocity carries over from the belt's current speed (see README
         section 4.1a: exit speed depends on entry speed); weight comes
         from the package's own record.
+
+        A package that reaches the end while still in a non-terminal
+        status (e.g. it overran its destination gate in one large position
+        jump, see Controller.update_package_position()) is marked
+        PACKAGE_LOST instead (see README section 25) before being handed
+        off the same way — the controller has no gates on the gravity
+        segment to route it with any more, so tracking it as anything but
+        lost would be misleading.
         """
         for package_id in await self.segment.get_package_ids():
             position = await self.segment.get_package_position(package_id)
             if position < self.segment.length:
                 continue
             package = self.controller.packages[package_id]
+            if package.status not in TERMINAL_PACKAGE_STATUSES:
+                self.controller.mark_lost(package_id)
             self.segment.remove_package(package_id)
             del self._entry_references[package_id]
             self.gravity_segment.add_package(
                 package_id, weight=package.weight, position=0.0, velocity=self.segment.speed
             )
 
+    def _check_device_faults(self) -> None:
+        """Report any newly-faulted device once (CONVEYOR_STOPPED, SENSOR_ERROR, ENCODER_ERROR).
+
+        Fault injection itself happens elsewhere (e.g.
+        DrivenConveyorSegment.simulate_fault(), SimulatedSensor.
+        simulate_error(), SimulatedEncoder.simulate_error()) — this only
+        turns a device's faulted flag into a one-shot logged event/
+        statistic the first tick it's observed (see README section 25).
+        """
+        if self.segment.faulted and not self._conveyor_fault_reported:
+            self._conveyor_fault_reported = True
+            self.controller.record_conveyor_stopped()
+
+        if self.encoder.faulted and not self._encoder_fault_reported:
+            self._encoder_fault_reported = True
+            self.controller.record_encoder_error()
+
+        for sensor in (self.entry_sensor, self.end_of_belt_sensor):
+            if sensor.faulted and sensor.sensor_id not in self._reported_sensor_faults:
+                self._reported_sensor_faults.add(sensor.sensor_id)
+                self.controller.record_sensor_error(sensor.sensor_id)
+
+    async def _check_gravity_segment_faults(self, dt: float) -> None:
+        """Detect packages stalling/piling up on the gravity segment.
+
+        A package with zero velocity that hasn't yet cleared the segment
+        is timed; once it's been motionless for GRAVITY_STALL_TIMEOUT_S,
+        it's reported once as GRAVITY_SEGMENT_JAM if it's resting against
+        another stopped package ahead of it (a pile-up, see
+        GravityConveyorSegment.advance()'s overtake prevention), or
+        GRAVITY_SEGMENT_STALL otherwise (stopped on its own, e.g. too
+        light for the segment's incline/friction, see README section 25).
+
+        Args:
+            dt: Elapsed simulated time since the last check, in seconds.
+        """
+        package_ids = await self.gravity_segment.get_package_ids()
+        positions = {pid: await self.gravity_segment.get_package_position(pid) for pid in package_ids}
+        velocities = {pid: await self.gravity_segment.get_package_velocity(pid) for pid in package_ids}
+        ordered = sorted(package_ids, key=lambda pid: -positions[pid])
+
+        for stale in set(self._gravity_stall_timers) - set(package_ids):
+            del self._gravity_stall_timers[stale]
+            self._gravity_alerted.discard(stale)
+
+        for index, package_id in enumerate(ordered):
+            if velocities[package_id] != 0.0 or positions[package_id] >= self.gravity_segment.length:
+                self._gravity_stall_timers.pop(package_id, None)
+                self._gravity_alerted.discard(package_id)
+                continue
+
+            self._gravity_stall_timers[package_id] = self._gravity_stall_timers.get(package_id, 0.0) + dt
+            if package_id in self._gravity_alerted:
+                continue
+            if self._gravity_stall_timers[package_id] < GRAVITY_STALL_TIMEOUT_S:
+                continue
+
+            self._gravity_alerted.add(package_id)
+            blocked_by_package_ahead = index > 0 and positions[package_id] == positions[ordered[index - 1]]
+            if blocked_by_package_ahead:
+                self.controller.record_gravity_jam(package_id)
+            else:
+                self.controller.record_gravity_stall(package_id)
+
     async def tick(self, real_dt: float) -> None:
         """Advance the engine, scan arrived packages, sync the controller,
-        and hand off packages that reached the end of the driven segment.
+        hand off packages that reached the end of the driven segment, and
+        report any device faults or gravity-segment stalls/jams.
 
         Args:
             real_dt: Elapsed real (wall-clock) time since the last tick,
                 in seconds.
         """
-        self.engine.tick(real_dt)
+        sim_dt = self.engine.tick(real_dt)
         await self._scan_arrived_packages()
         await self._update_sensors()
         await self._sync_controller_from_encoder()
         await self._handoff_to_gravity_segment()
+        self._check_device_faults()
+        await self._check_gravity_segment_faults(sim_dt)
 
     async def emergency_stop(self) -> None:
         """Trip the emergency stop (see README section 26).

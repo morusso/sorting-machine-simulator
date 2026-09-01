@@ -51,6 +51,13 @@ class Statistics:
         self.unknown_codes = 0
         self.scan_errors = 0
         self.gate_errors = 0
+        self.duplicate_scans = 0
+        self.lost_packages = 0
+        self.gravity_segment_stalls = 0
+        self.gravity_segment_jams = 0
+        self.conveyor_stops = 0
+        self.sensor_errors = 0
+        self.encoder_errors = 0
         self._timings: dict[str, _PackageTiming] = {}
 
     def subscribe_to(self, bus: EventBus) -> None:
@@ -81,6 +88,24 @@ class Statistics:
             lambda e: self.record_package_sorted(e.timestamp, e.package_id, e.gate_id),
         )
         bus.subscribe(domain_events.EmergencyStopped, lambda e: self.record_emergency_stop(e.timestamp))
+        bus.subscribe(
+            domain_events.DuplicateScanDetected,
+            lambda e: self.record_duplicate_scan(e.timestamp, e.package_id),
+        )
+        bus.subscribe(domain_events.PackageLost, lambda e: self.record_package_lost(e.timestamp, e.package_id))
+        bus.subscribe(
+            domain_events.GravitySegmentStalled,
+            lambda e: self.record_gravity_stall(e.timestamp, e.package_id),
+        )
+        bus.subscribe(
+            domain_events.GravitySegmentJammed,
+            lambda e: self.record_gravity_jam(e.timestamp, e.package_id),
+        )
+        bus.subscribe(domain_events.ConveyorStopped, lambda e: self.record_conveyor_stopped(e.timestamp))
+        bus.subscribe(
+            domain_events.SensorErrored, lambda e: self.record_sensor_error(e.timestamp, e.sensor_id)
+        )
+        bus.subscribe(domain_events.EncoderErrored, lambda e: self.record_encoder_error(e.timestamp))
 
     def record_package_created(self, timestamp: float, package_id: str) -> None:
         """Record a new package entering the system.
@@ -171,6 +196,74 @@ class Statistics:
         """
         self.events.append(Event(timestamp, "EMERGENCY_STOP"))
 
+    def record_duplicate_scan(self, timestamp: float, package_id: str) -> None:
+        """Record a package being scanned again after already being scanned (see README section 25).
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+            package_id: Identifier of the package.
+        """
+        self.duplicate_scans += 1
+        self.events.append(Event(timestamp, "DUPLICATE_SCAN", package_id))
+
+    def record_package_lost(self, timestamp: float, package_id: str) -> None:
+        """Record a package leaving the driven segment without ever being sorted, rejected, or errored.
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+            package_id: Identifier of the package.
+        """
+        self.lost_packages += 1
+        self.events.append(Event(timestamp, "PACKAGE_LOST", package_id))
+
+    def record_gravity_stall(self, timestamp: float, package_id: str) -> None:
+        """Record a package stalling on the gravity segment on its own (see README section 25).
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+            package_id: Identifier of the package.
+        """
+        self.gravity_segment_stalls += 1
+        self.events.append(Event(timestamp, "GRAVITY_SEGMENT_STALL", package_id))
+
+    def record_gravity_jam(self, timestamp: float, package_id: str) -> None:
+        """Record a package being blocked by another package ahead of it on the gravity segment.
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+            package_id: Identifier of the package.
+        """
+        self.gravity_segment_jams += 1
+        self.events.append(Event(timestamp, "GRAVITY_SEGMENT_JAM", package_id))
+
+    def record_conveyor_stopped(self, timestamp: float) -> None:
+        """Record the driven conveyor faulting to a stop (see README section 25).
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+        """
+        self.conveyor_stops += 1
+        self.events.append(Event(timestamp, "CONVEYOR_STOPPED"))
+
+    def record_sensor_error(self, timestamp: float, sensor_id: str) -> None:
+        """Record a sensor faulting (see README section 25).
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+            sensor_id: Identifier of the faulted sensor.
+        """
+        self.sensor_errors += 1
+        self.events.append(Event(timestamp, "SENSOR_ERROR", detail=sensor_id))
+
+    def record_encoder_error(self, timestamp: float) -> None:
+        """Record the encoder faulting (see README section 25).
+
+        Args:
+            timestamp: Simulated time of the event, in seconds.
+        """
+        self.encoder_errors += 1
+        self.events.append(Event(timestamp, "ENCODER_ERROR"))
+
     @property
     def average_scan_time(self) -> float | None:
         """Average time from creation to a successful scan, in seconds.
@@ -210,6 +303,13 @@ class Statistics:
             "scan_errors": self.scan_errors,
             "gate_errors": self.gate_errors,
             "error_packages": error_packages,
+            "duplicate_scans": self.duplicate_scans,
+            "lost_packages": self.lost_packages,
+            "gravity_segment_stalls": self.gravity_segment_stalls,
+            "gravity_segment_jams": self.gravity_segment_jams,
+            "conveyor_stops": self.conveyor_stops,
+            "sensor_errors": self.sensor_errors,
+            "encoder_errors": self.encoder_errors,
             "average_scan_time": self.average_scan_time,
             "average_sort_time": self.average_sort_time,
             "throughput": self.sorted_packages / elapsed_time if elapsed_time > 0 else 0.0,

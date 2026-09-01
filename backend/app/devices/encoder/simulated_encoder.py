@@ -31,15 +31,31 @@ class SimulatedEncoder(Encoder):
         self._conveyor = conveyor
         self.resolution = resolution
         self.wheel_circumference = wheel_circumference
+        self.faulted = False
+        self._frozen_pulse_count = 0
 
     async def get_pulse_count(self) -> int:
         """Return the cumulative number of pulses generated so far.
 
         Returns:
             The total pulse count implied by the conveyor's belt travel
-            since the segment was created.
+            since the segment was created, or the pulse count frozen at
+            the moment of simulate_error() if the encoder is faulted.
         """
+        if self.faulted:
+            return self._frozen_pulse_count
         return round(self._conveyor.total_distance * self.pulses_per_meter)
+
+    def simulate_error(self) -> None:
+        """Force the encoder into a faulted state (ENCODER_ERROR).
+
+        Freezes get_pulse_count() at its current value, as if the encoder
+        wheel had disconnected from the belt — the belt keeps moving but
+        the encoder stops reporting it. There is no way back other than
+        rebuilding the encoder (see SortingLine.reset()).
+        """
+        self._frozen_pulse_count = round(self._conveyor.total_distance * self.pulses_per_meter)
+        self.faulted = True
 
     @property
     def pulses_per_meter(self) -> float:

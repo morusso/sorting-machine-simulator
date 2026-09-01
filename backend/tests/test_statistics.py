@@ -90,6 +90,56 @@ def test_summary_throughput_and_success_rate():
     assert summary["success_rate"] == pytest.approx(0.5)
 
 
+def test_record_duplicate_scan_increments_counter():
+    stats = Statistics()
+    stats.record_duplicate_scan(1.0, "PKG-1")
+    assert stats.duplicate_scans == 1
+    assert stats.events[-1].event_type == "DUPLICATE_SCAN"
+
+
+def test_record_package_lost_increments_counter():
+    stats = Statistics()
+    stats.record_package_lost(1.0, "PKG-1")
+    assert stats.lost_packages == 1
+    assert stats.events[-1].event_type == "PACKAGE_LOST"
+
+
+def test_record_gravity_stall_increments_counter():
+    stats = Statistics()
+    stats.record_gravity_stall(1.0, "PKG-1")
+    assert stats.gravity_segment_stalls == 1
+    assert stats.events[-1].event_type == "GRAVITY_SEGMENT_STALL"
+
+
+def test_record_gravity_jam_increments_counter():
+    stats = Statistics()
+    stats.record_gravity_jam(1.0, "PKG-1")
+    assert stats.gravity_segment_jams == 1
+    assert stats.events[-1].event_type == "GRAVITY_SEGMENT_JAM"
+
+
+def test_record_conveyor_stopped_increments_counter():
+    stats = Statistics()
+    stats.record_conveyor_stopped(1.0)
+    assert stats.conveyor_stops == 1
+    assert stats.events[-1].event_type == "CONVEYOR_STOPPED"
+
+
+def test_record_sensor_error_increments_counter():
+    stats = Statistics()
+    stats.record_sensor_error(1.0, "SENSOR-ENTRY")
+    assert stats.sensor_errors == 1
+    assert stats.events[-1].event_type == "SENSOR_ERROR"
+    assert stats.events[-1].detail == "SENSOR-ENTRY"
+
+
+def test_record_encoder_error_increments_counter():
+    stats = Statistics()
+    stats.record_encoder_error(1.0)
+    assert stats.encoder_errors == 1
+    assert stats.events[-1].event_type == "ENCODER_ERROR"
+
+
 def test_summary_handles_zero_elapsed_time_and_no_packages():
     stats = Statistics()
     summary = stats.summary(elapsed_time=0.0)

@@ -77,6 +77,13 @@ class StatisticsResponse(BaseModel):
     scan_errors: int
     gate_errors: int
     error_packages: int
+    duplicate_scans: int
+    lost_packages: int
+    gravity_segment_stalls: int
+    gravity_segment_jams: int
+    conveyor_stops: int
+    sensor_errors: int
+    encoder_errors: int
     average_scan_time: float | None
     average_sort_time: float | None
     throughput: float
@@ -192,6 +199,8 @@ async def set_conveyor_speed(body: SetConveyorSpeedRequest, request: Request) ->
         state.segment.set_speed(body.speed)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ConveyorStatusResponse(speed=state.segment.speed, target_speed=state.segment.target_speed)
 
 

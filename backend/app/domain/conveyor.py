@@ -50,6 +50,11 @@ class DrivenConveyorSegment(ConveyorSegment):
             Unlike package position, this is never clamped to the segment
             length — it reflects actual belt travel and backs the encoder's
             pulse count (see SimulatedEncoder).
+        faulted: Whether the belt has faulted to a stop (see
+            simulate_fault(), README section 25, CONVEYOR_STOPPED). Unlike
+            emergency_stop(), this is a fault rather than a deliberate
+            safety trip, and there is no way back other than rebuilding
+            the segment (see SortingLine.reset()).
     """
 
     def __init__(self, length: float, speed: float, max_speed: float, acceleration: float):
@@ -67,6 +72,7 @@ class DrivenConveyorSegment(ConveyorSegment):
         self.max_speed = max_speed
         self.acceleration = acceleration
         self.total_distance = 0.0
+        self.faulted = False
         self._positions: dict[str, float] = {}
 
     @property
@@ -97,7 +103,10 @@ class DrivenConveyorSegment(ConveyorSegment):
 
         Raises:
             ValueError: If target_speed is negative or exceeds max_speed.
+            RuntimeError: If the belt is currently faulted (see simulate_fault()).
         """
+        if self.faulted:
+            raise RuntimeError("conveyor is faulted; reset to recover")
         if target_speed < 0:
             raise ValueError("target_speed must be non-negative")
         if target_speed > self.max_speed:
@@ -110,6 +119,16 @@ class DrivenConveyorSegment(ConveyorSegment):
         See README section 26: a driven conveyor's reaction to
         EMERGENCY_STOP is to stop outright, not to brake gradually.
         """
+        self.speed = 0.0
+
+    def simulate_fault(self) -> None:
+        """Force the belt to a stop, as if the motor faulted (CONVEYOR_STOPPED).
+
+        Unlike emergency_stop(), this represents an unexpected fault, not a
+        deliberate safety trip: it also blocks any further set_speed() call
+        until the segment is rebuilt (see SortingLine.reset()).
+        """
+        self.faulted = True
         self.speed = 0.0
 
     def add_package(self, package_id: str, position: float = 0.0) -> None:

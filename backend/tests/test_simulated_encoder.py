@@ -42,3 +42,14 @@ async def test_pulse_count_reflects_speed_changes():
 def test_pulses_per_meter_derived_from_resolution_and_wheel_circumference():
     _, encoder = make_encoder(resolution=1000, wheel_circumference=0.5)
     assert encoder.pulses_per_meter == pytest.approx(2000.0)
+
+
+@pytest.mark.asyncio
+async def test_simulate_error_freezes_pulse_count():
+    conveyor, encoder = make_encoder(speed=1.0, resolution=1000, wheel_circumference=0.5)
+    conveyor.advance(1.0)
+    encoder.simulate_error()
+    conveyor.advance(1.0)
+
+    assert encoder.faulted is True
+    assert await encoder.get_pulse_count() == 2000

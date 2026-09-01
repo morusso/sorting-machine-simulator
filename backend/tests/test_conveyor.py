@@ -164,3 +164,18 @@ async def test_emergency_stop_prevents_further_movement():
     segment.emergency_stop()
     segment.advance(5.0)
     assert await segment.get_package_position("PKG-1") == pytest.approx(0.0)
+
+
+def test_simulate_fault_stops_the_belt():
+    segment = make_segment(speed=2.0)
+    segment.simulate_fault()
+    assert segment.faulted is True
+    assert segment.speed == 0.0
+    assert segment.target_speed == 0.0
+
+
+def test_set_speed_after_fault_raises():
+    segment = make_segment()
+    segment.simulate_fault()
+    with pytest.raises(RuntimeError):
+        segment.set_speed(1.0)
