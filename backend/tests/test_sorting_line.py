@@ -380,6 +380,86 @@ async def test_emergency_stop_never_raises_from_any_engine_state():
 
 
 @pytest.mark.asyncio
+async def test_package_overshooting_its_gate_in_one_tick_is_marked_lost():
+    line = SortingLine()
+    package = await line.create_package("5901234567890")  # routes to gate 1 at position 7.0
+    line.engine.start()
+    line.segment.speed = 100.0  # bypasses accel ramping; one tick jumps clean past the scanner, gate, and segment end
+
+    await line.tick(1.0)
+
+    assert line.controller.packages[package.package_id].status == PackageStatus.LOST
+    assert line.controller.statistics.lost_packages == 1
+    assert package.package_id in await line.gravity_segment.get_package_ids()
+
+
+@pytest.mark.asyncio
+async def test_conveyor_fault_is_reported_once():
+    line = SortingLine()
+    line.engine.start()
+    line.segment.simulate_fault()
+
+    await line.tick(0.1)
+    await line.tick(0.1)
+
+    assert line.controller.statistics.conveyor_stops == 1
+
+
+@pytest.mark.asyncio
+async def test_sensor_fault_is_reported_once():
+    line = SortingLine()
+    line.engine.start()
+    line.entry_sensor.simulate_error()
+
+    await line.tick(0.1)
+    await line.tick(0.1)
+
+    assert line.controller.statistics.sensor_errors == 1
+    assert line.controller.statistics.events[-1].detail == "SENSOR-ENTRY"
+
+
+@pytest.mark.asyncio
+async def test_encoder_fault_is_reported_once():
+    line = SortingLine()
+    line.engine.start()
+    line.encoder.simulate_error()
+
+    await line.tick(0.1)
+    await line.tick(0.1)
+
+    assert line.controller.statistics.encoder_errors == 1
+
+
+@pytest.mark.asyncio
+async def test_stalled_light_package_on_gravity_segment_is_reported():
+    line = SortingLine(SortingLineConfig(gravity_min_package_weight=0.5))
+    line.engine.start()
+    line.gravity_segment.add_package("PKG-1", weight=0.1, position=1.0)
+
+    for _ in range(30):
+        await line.tick(0.1)
+
+    assert line.controller.statistics.gravity_segment_stalls == 1
+    assert line.controller.statistics.events[-1].event_type == "GRAVITY_SEGMENT_STALL"
+
+
+@pytest.mark.asyncio
+async def test_package_blocked_by_a_stalled_package_ahead_is_reported_as_jam():
+    line = SortingLine(
+        SortingLineConfig(gravity_min_package_weight=0.5, gravity_incline_angle=45.0, gravity_friction_coefficient=0.0)
+    )
+    line.engine.start()
+    line.gravity_segment.add_package("PKG-FRONT", weight=0.1, position=1.0)  # too light to move; stays put
+    line.gravity_segment.add_package("PKG-BACK", weight=2.0, position=0.5)  # catches up and gets blocked behind it
+
+    for _ in range(60):
+        await line.tick(0.1)
+
+    assert line.controller.statistics.gravity_segment_stalls == 1
+    assert line.controller.statistics.gravity_segment_jams == 1
+
+
+@pytest.mark.asyncio
 async def test_snapshot_reflects_emergency_stop():
     line = SortingLine()
     await line.emergency_stop()

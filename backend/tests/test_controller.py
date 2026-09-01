@@ -348,3 +348,63 @@ async def test_update_package_position_in_safe_mode_still_records_position():
 
     updated = await controller.update_package_position("PKG-1", 3.5)
     assert updated.position == 3.5
+
+
+def test_handle_scan_result_twice_reports_duplicate_scan_on_the_second():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    result = ScanResult(
+        event=ScanEvent.CODE_DETECTED,
+        scan_id="SCAN-000001",
+        package_id="PKG-1",
+        code="5901234567890",
+    )
+    controller.handle_scan_result(result)
+    package = controller.handle_scan_result(result)
+
+    assert controller.statistics.duplicate_scans == 1
+    assert controller.statistics.events[-1].event_type == "DUPLICATE_SCAN"
+    # Left exactly as the first scan result set it.
+    assert package.status == PackageStatus.ASSIGNED
+
+
+def test_mark_lost_sets_status_and_records_statistics():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+
+    controller.mark_lost("PKG-1")
+
+    assert controller.packages["PKG-1"].status == PackageStatus.LOST
+    assert controller.statistics.lost_packages == 1
+    assert controller.statistics.events[-1].event_type == "PACKAGE_LOST"
+
+
+def test_record_gravity_stall_publishes_event():
+    controller, _, _ = make_controller()
+    controller.record_gravity_stall("PKG-1")
+    assert controller.statistics.gravity_segment_stalls == 1
+
+
+def test_record_gravity_jam_publishes_event():
+    controller, _, _ = make_controller()
+    controller.record_gravity_jam("PKG-1")
+    assert controller.statistics.gravity_segment_jams == 1
+
+
+def test_record_conveyor_stopped_publishes_event():
+    controller, _, _ = make_controller()
+    controller.record_conveyor_stopped()
+    assert controller.statistics.conveyor_stops == 1
+
+
+def test_record_sensor_error_publishes_event():
+    controller, _, _ = make_controller()
+    controller.record_sensor_error("SENSOR-ENTRY")
+    assert controller.statistics.sensor_errors == 1
+    assert controller.statistics.events[-1].detail == "SENSOR-ENTRY"
+
+
+def test_record_encoder_error_publishes_event():
+    controller, _, _ = make_controller()
+    controller.record_encoder_error()
+    assert controller.statistics.encoder_errors == 1

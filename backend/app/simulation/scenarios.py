@@ -32,6 +32,8 @@ class ScenarioResult:
         sorted_packages: Number that reached SORTED.
         rejected_packages: Number that reached REJECTED (unroutable barcode).
         error_packages: Number that reached ERROR (failed scan or gate).
+        lost_packages: Number that reached LOST (see README section 25,
+            PACKAGE_LOST).
         elapsed_time: Simulated time the scenario ran for, in seconds.
     """
 
@@ -40,11 +42,18 @@ class ScenarioResult:
     rejected_packages: int
     error_packages: int
     elapsed_time: float
+    lost_packages: int = 0
 
     @property
     def unsorted_packages(self) -> int:
-        """Packages still in flight (neither sorted, rejected, nor errored)."""
-        return self.total_packages - self.sorted_packages - self.rejected_packages - self.error_packages
+        """Packages still in flight (neither sorted, rejected, errored, nor lost)."""
+        return (
+            self.total_packages
+            - self.sorted_packages
+            - self.rejected_packages
+            - self.error_packages
+            - self.lost_packages
+        )
 
 
 def _round_robin_barcodes(routing_table: dict[str, int]) -> Iterable[str]:
@@ -54,7 +63,7 @@ def _round_robin_barcodes(routing_table: dict[str, int]) -> Iterable[str]:
 
 def _is_settled(line: SortingLine) -> bool:
     """Whether every tracked package has reached a terminal status."""
-    terminal = (PackageStatus.SORTED, PackageStatus.REJECTED, PackageStatus.ERROR)
+    terminal = (PackageStatus.SORTED, PackageStatus.REJECTED, PackageStatus.ERROR, PackageStatus.LOST)
     return all(package.status in terminal for package in line.controller.packages.values())
 
 
@@ -66,6 +75,7 @@ def _summarize(line: SortingLine, elapsed_time: float) -> ScenarioResult:
         sorted_packages=statuses.count(PackageStatus.SORTED),
         rejected_packages=statuses.count(PackageStatus.REJECTED),
         error_packages=statuses.count(PackageStatus.ERROR),
+        lost_packages=statuses.count(PackageStatus.LOST),
         elapsed_time=elapsed_time,
     )
 

@@ -5,13 +5,20 @@ from app.domain.scanner import ScanEvent, ScanResult
 from app.simulation.clock import Clock
 from app.simulation.events import (
     CodeDetected,
+    ConveyorStopped,
+    DuplicateScanDetected,
     EmergencyStopped,
+    EncoderErrored,
     EventBus,
     GateErrored,
     GateOpened,
+    GravitySegmentJammed,
+    GravitySegmentStalled,
     PackageCreated,
+    PackageLost,
     PackageSorted,
     ScanErrored,
+    SensorErrored,
     UnknownCodeScanned,
 )
 from app.simulation.statistics import Statistics
@@ -116,7 +123,9 @@ class Controller:
         section 25). A CODE_DETECTED result records the barcode and either
         assigns a destination gate from routing_table (status ASSIGNED) or,
         if the barcode has no routing entry, marks the package REJECTED
-        (UNKNOWN_BARCODE).
+        (UNKNOWN_BARCODE). A package that has already been scanned once
+        (i.e. this is not its first scan result) is left untouched and
+        instead reported as a DUPLICATE_SCAN (see README section 25).
 
         Args:
             result: The scan outcome to apply.
@@ -129,6 +138,10 @@ class Controller:
         """
         package = self.packages[result.package_id]
         now = self.clock.now()
+
+        if package.status not in (PackageStatus.CREATED, PackageStatus.IN_TRANSIT):
+            self.events.publish(DuplicateScanDetected(timestamp=now, package_id=result.package_id))
+            return package
 
         if result.event == ScanEvent.CODE_NOT_FOUND:
             package.status = PackageStatus.ERROR
@@ -159,6 +172,64 @@ class Controller:
         """
         self.safe_mode = True
         self.events.publish(EmergencyStopped(timestamp=self.clock.now()))
+
+    def mark_lost(self, package_id: str) -> None:
+        """Mark a tracked package as PACKAGE_LOST (see README section 25).
+
+        Meant for a package that left the transport it was being tracked
+        on (e.g. reached the end of the driven segment) without ever
+        reaching a terminal status (SORTED, REJECTED, or ERROR) — for
+        example because it overran its destination gate in a single large
+        position jump (see SortingLine._handoff_to_gravity_segment()).
+
+        Args:
+            package_id: Identifier of the package to mark lost.
+
+        Raises:
+            KeyError: If package_id is not a tracked package.
+        """
+        self.packages[package_id].status = PackageStatus.LOST
+        self.events.publish(PackageLost(timestamp=self.clock.now(), package_id=package_id))
+
+    def record_gravity_stall(self, package_id: str) -> None:
+        """Publish a GRAVITY_SEGMENT_STALL event for a package that stopped
+        moving on the gravity segment on its own (see README section 25).
+
+        Detection lives in SortingLine, not here — the controller does not
+        otherwise need to know about the gravity segment's physics (see
+        README section 28).
+
+        Args:
+            package_id: Identifier of the stalled package.
+        """
+        self.events.publish(GravitySegmentStalled(timestamp=self.clock.now(), package_id=package_id))
+
+    def record_gravity_jam(self, package_id: str) -> None:
+        """Publish a GRAVITY_SEGMENT_JAM event for a package blocked by
+        another package ahead of it on the gravity segment (see README
+        section 25).
+
+        Args:
+            package_id: Identifier of the blocked package.
+        """
+        self.events.publish(GravitySegmentJammed(timestamp=self.clock.now(), package_id=package_id))
+
+    def record_conveyor_stopped(self) -> None:
+        """Publish a CONVEYOR_STOPPED event for the driven conveyor faulting
+        to a stop outside of a commanded stop (see README section 25)."""
+        self.events.publish(ConveyorStopped(timestamp=self.clock.now()))
+
+    def record_sensor_error(self, sensor_id: str) -> None:
+        """Publish a SENSOR_ERROR event for a sensor that has faulted (see README section 25).
+
+        Args:
+            sensor_id: Identifier of the faulted sensor.
+        """
+        self.events.publish(SensorErrored(timestamp=self.clock.now(), sensor_id=sensor_id))
+
+    def record_encoder_error(self) -> None:
+        """Publish an ENCODER_ERROR event for the encoder faulting (see README section 25)."""
+        self.events.publish(EncoderErrored(timestamp=self.clock.now()))
 
     @staticmethod
     def calculate_arrival_time(current_position: float, target_position: float, speed: float) -> float:

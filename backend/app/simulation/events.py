@@ -73,6 +73,60 @@ class PackageSorted:
 
 
 @dataclass(frozen=True)
+class DuplicateScanDetected:
+    """A package was scanned again after already having been scanned (DUPLICATE_SCAN)."""
+
+    timestamp: float
+    package_id: str
+
+
+@dataclass(frozen=True)
+class PackageLost:
+    """A package left the driven segment without reaching a terminal status (PACKAGE_LOST)."""
+
+    timestamp: float
+    package_id: str
+
+
+@dataclass(frozen=True)
+class GravitySegmentStalled:
+    """A package stopped moving on the gravity segment on its own (GRAVITY_SEGMENT_STALL)."""
+
+    timestamp: float
+    package_id: str
+
+
+@dataclass(frozen=True)
+class GravitySegmentJammed:
+    """A package was blocked by another package ahead of it on the gravity segment (GRAVITY_SEGMENT_JAM)."""
+
+    timestamp: float
+    package_id: str
+
+
+@dataclass(frozen=True)
+class ConveyorStopped:
+    """The driven conveyor faulted and stopped outside of a commanded stop (CONVEYOR_STOPPED)."""
+
+    timestamp: float
+
+
+@dataclass(frozen=True)
+class SensorErrored:
+    """A sensor faulted and stopped reporting reliable readings (SENSOR_ERROR)."""
+
+    timestamp: float
+    sensor_id: str
+
+
+@dataclass(frozen=True)
+class EncoderErrored:
+    """The encoder faulted and stopped reporting pulses (ENCODER_ERROR)."""
+
+    timestamp: float
+
+
+@dataclass(frozen=True)
 class EmergencyStopped:
     """The controller entered SAFE_MODE (see README section 26, EMERGENCY_STOP)."""
 

@@ -204,6 +204,27 @@ def test_get_statistics_counts_every_created_package(client):
     assert response.json()["total_packages"] == 3
 
 
+def test_get_statistics_includes_the_newer_error_counters(client):
+    response = client.get("/api/statistics")
+    body = response.json()
+    for field in (
+        "duplicate_scans",
+        "lost_packages",
+        "gravity_segment_stalls",
+        "gravity_segment_jams",
+        "conveyor_stops",
+        "sensor_errors",
+        "encoder_errors",
+    ):
+        assert body[field] == 0
+
+
+def test_set_conveyor_speed_after_a_fault_returns_conflict(client):
+    client.app.state.simulation.segment.simulate_fault()
+    response = client.post("/api/conveyor/speed", json={"speed": 1.0})
+    assert response.status_code == 409
+
+
 def test_get_events_starts_empty(client):
     response = client.get("/api/events")
     assert response.status_code == 200
