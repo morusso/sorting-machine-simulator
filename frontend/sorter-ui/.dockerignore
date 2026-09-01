@@ -1,0 +1,7 @@
+node_modules
+.next
+out
+cypress
+.git
+.env*
+npm-debug.log*
