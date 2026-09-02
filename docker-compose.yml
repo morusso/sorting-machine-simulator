@@ -1,12 +1,32 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=sorter
+      - POSTGRES_PASSWORD=sorter
+      - POSTGRES_DB=sorter
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sorter -d sorter"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+asyncpg://sorter:sorter@postgres:5432/sorter
     volumes:
       - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build: ./frontend/sorter-ui
@@ -20,3 +40,6 @@ services:
       - /app/.next
     depends_on:
       - backend
+
+volumes:
+  postgres_data:
