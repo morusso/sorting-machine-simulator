@@ -7,9 +7,21 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.storage.models import STATIONS, OrderRecord, OrderStationStatusRecord, OrderStatus, PackageRecord, StationStatus
+from app.storage.models import (
+    STATIONS,
+    OrderBarcodeRecord,
+    OrderRecord,
+    OrderStationStatusRecord,
+    OrderStatus,
+    PackageRecord,
+    StationStatus,
+)
 
-_EAGER_LOAD = [selectinload(OrderRecord.packages), selectinload(OrderRecord.station_statuses)]
+_EAGER_LOAD = [
+    selectinload(OrderRecord.packages),
+    selectinload(OrderRecord.station_statuses),
+    selectinload(OrderRecord.barcodes),
+]
 
 
 class OrderNotFoundError(Exception):
@@ -22,6 +34,10 @@ class PackageNotFoundError(Exception):
 
 class StationNotFoundError(Exception):
     """Raised when a station_id isn't in STATIONS (so no row was seeded for it)."""
+
+
+class BarcodeNotFoundError(Exception):
+    """Raised when a barcode has no matching OrderBarcodeRecord."""
 
 
 class OrderRepository:
@@ -97,3 +113,21 @@ class OrderRepository:
         await self.session.commit()
         await self.session.refresh(station)
         return station
+
+    async def register_barcode(self, order_id: str, barcode: str) -> OrderBarcodeRecord:
+        await self.get_order(order_id)
+        record = OrderBarcodeRecord(barcode=barcode, order_id=order_id)
+        self.session.add(record)
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise ValueError(f"barcode {barcode!r} is already registered to an order") from exc
+        await self.session.refresh(record)
+        return record
+
+    async def get_order_by_barcode(self, barcode: str) -> OrderRecord:
+        record = await self.session.get(OrderBarcodeRecord, barcode)
+        if record is None:
+            raise BarcodeNotFoundError(barcode)
+        return await self.get_order(record.order_id)

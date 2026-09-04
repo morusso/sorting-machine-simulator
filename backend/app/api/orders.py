@@ -17,7 +17,13 @@ from app.domain.package import PackageStatus
 from app.storage.database import get_session
 from app.storage.models import OrderStatus, StationStatus
 from app.storage.models import PackageRecord as PackageRecordModel
-from app.storage.repository import OrderNotFoundError, OrderRepository, PackageNotFoundError, StationNotFoundError
+from app.storage.repository import (
+    BarcodeNotFoundError,
+    OrderNotFoundError,
+    OrderRepository,
+    PackageNotFoundError,
+    StationNotFoundError,
+)
 
 router = APIRouter()
 
@@ -33,6 +39,10 @@ class UpdateOrderStatusRequest(BaseModel):
 
 class UpdateStationStatusRequest(BaseModel):
     status: StationStatus
+
+
+class RegisterBarcodeRequest(BaseModel):
+    barcode: str
 
 
 class CreateOrderPackageRequest(BaseModel):
@@ -79,6 +89,13 @@ class StationStatusResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrderBarcodeResponse(BaseModel):
+    barcode: str
+    registered_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class OrderResponse(BaseModel):
     order_id: str
     customer_name: str | None
@@ -88,6 +105,7 @@ class OrderResponse(BaseModel):
     updated_at: datetime
     packages: list[OrderPackageResponse]
     station_statuses: list[StationStatusResponse]
+    barcodes: list[OrderBarcodeResponse]
 
     model_config = {"from_attributes": True}
 
@@ -200,3 +218,29 @@ async def update_station_status(
     except StationNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"station {station_id} not found in order {order_id!r}") from exc
     return StationStatusResponse.model_validate(station)
+
+
+@router.post("/api/orders/{order_id}/barcodes", response_model=OrderBarcodeResponse)
+async def register_barcode(
+    order_id: str, body: RegisterBarcodeRequest, session: AsyncSession = Depends(get_session)
+) -> OrderBarcodeResponse:
+    """Register a barcode expected for an order, ahead of any physical package."""
+    repo = OrderRepository(session)
+    try:
+        record = await repo.register_barcode(order_id, body.barcode)
+    except OrderNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"order {order_id!r} not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return OrderBarcodeResponse.model_validate(record)
+
+
+@router.get("/api/orders/by-barcode/{barcode}", response_model=OrderResponse)
+async def get_order_by_barcode(barcode: str, session: AsyncSession = Depends(get_session)) -> OrderResponse:
+    """Look up the order a barcode is registered to."""
+    repo = OrderRepository(session)
+    try:
+        order = await repo.get_order_by_barcode(barcode)
+    except BarcodeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"barcode {barcode!r} is not registered to any order") from exc
+    return OrderResponse.model_validate(order)

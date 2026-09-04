@@ -65,6 +65,7 @@ class OrderRecord(Base):
     station_statuses: Mapped[list["OrderStationStatusRecord"]] = relationship(
         back_populates="order", cascade="all, delete-orphan", order_by="OrderStationStatusRecord.station_id"
     )
+    barcodes: Mapped[list["OrderBarcodeRecord"]] = relationship(back_populates="order", cascade="all, delete-orphan")
 
 
 class PackageRecord(Base):
@@ -111,3 +112,23 @@ class OrderStationStatusRecord(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     order: Mapped["OrderRecord"] = relationship(back_populates="station_statuses")
+
+
+class OrderBarcodeRecord(Base):
+    """A barcode expected for an order, registered ahead of any physical
+    package (see PackageRecord.barcode for the barcode actually read off a
+    package that's been created).
+
+    barcode is the primary key rather than a surrogate id, so a barcode
+    maps to at most one order system-wide — registering it against a
+    second order fails instead of silently shadowing the first (see
+    OrderRepository.register_barcode()).
+    """
+
+    __tablename__ = "order_barcodes"
+
+    barcode: Mapped[str] = mapped_column(String(255), primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.order_id"))
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    order: Mapped["OrderRecord"] = relationship(back_populates="barcodes")

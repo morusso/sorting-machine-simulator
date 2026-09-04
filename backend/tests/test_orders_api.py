@@ -168,3 +168,41 @@ def test_get_order_package_returns_404_when_missing(client):
     order = client.post("/api/orders", json={}).json()
     response = client.get(f"/api/orders/{order['order_id']}/packages/PKG-999999")
     assert response.status_code == 404
+
+
+def test_register_barcode_for_order(client):
+    order = client.post("/api/orders", json={}).json()
+    response = client.post(f"/api/orders/{order['order_id']}/barcodes", json={"barcode": "5901234567890"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["barcode"] == "5901234567890"
+    assert body["registered_at"] is not None
+
+    reloaded = client.get(f"/api/orders/{order['order_id']}").json()
+    assert reloaded["barcodes"] == [body]
+
+
+def test_register_barcode_rejects_a_duplicate_across_orders(client):
+    first = client.post("/api/orders", json={}).json()
+    second = client.post("/api/orders", json={}).json()
+    client.post(f"/api/orders/{first['order_id']}/barcodes", json={"barcode": "5901234567890"})
+    response = client.post(f"/api/orders/{second['order_id']}/barcodes", json={"barcode": "5901234567890"})
+    assert response.status_code == 409
+
+
+def test_register_barcode_to_missing_order_returns_404(client):
+    response = client.post("/api/orders/does-not-exist/barcodes", json={"barcode": "5901234567890"})
+    assert response.status_code == 404
+
+
+def test_get_order_by_barcode(client):
+    order = client.post("/api/orders", json={}).json()
+    client.post(f"/api/orders/{order['order_id']}/barcodes", json={"barcode": "5901234567890"})
+    response = client.get("/api/orders/by-barcode/5901234567890")
+    assert response.status_code == 200
+    assert response.json()["order_id"] == order["order_id"]
+
+
+def test_get_order_by_barcode_returns_404_when_unregistered(client):
+    response = client.get("/api/orders/by-barcode/0000000000000")
+    assert response.status_code == 404
