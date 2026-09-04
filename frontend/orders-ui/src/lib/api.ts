@@ -1,4 +1,12 @@
-import type { Order, OrderPackage, OrderStatus, PackageStatus, StationStatus, StationStatusEntry } from "./types";
+import type {
+  Order,
+  OrderBarcode,
+  OrderPackage,
+  OrderStatus,
+  PackageStatus,
+  StationStatus,
+  StationStatusEntry,
+} from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -73,4 +81,15 @@ export function updateStationStatus(
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+}
+
+export function registerBarcode(orderId: string, barcode: string): Promise<OrderBarcode> {
+  return request<OrderBarcode>(`/api/orders/${orderId}/barcodes`, {
+    method: "POST",
+    body: JSON.stringify({ barcode }),
+  });
+}
+
+export function getOrderByBarcode(barcode: string): Promise<Order> {
+  return request<Order>(`/api/orders/by-barcode/${encodeURIComponent(barcode)}`);
 }

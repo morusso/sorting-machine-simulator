@@ -7,7 +7,7 @@ import type { AddPackageInput } from "@/lib/api";
 interface Props {
   packages: OrderPackage[];
   busy: boolean;
-  onAdd: (input: AddPackageInput) => Promise<void>;
+  onAdd: (input: AddPackageInput) => Promise<boolean>;
 }
 
 export function OrderPackagesPanel({ packages, busy, onAdd }: Props) {
@@ -18,14 +18,16 @@ export function OrderPackagesPanel({ packages, busy, onAdd }: Props) {
   const [weight, setWeight] = useState("1.0");
 
   const submit = async () => {
-    await onAdd({
+    // Only clear the barcode on success — otherwise a failed add looks
+    // like it went through.
+    const ok = await onAdd({
       barcode: barcode || undefined,
       width: Number(width),
       length: Number(length),
       height: Number(height),
       weight: Number(weight),
     });
-    setBarcode("");
+    if (ok) setBarcode("");
   };
 
   return (

@@ -20,6 +20,11 @@ export interface StationStatusEntry {
   processed_at: string | null;
 }
 
+export interface OrderBarcode {
+  barcode: string;
+  registered_at: string;
+}
+
 export interface OrderPackage {
   package_id: string;
   order_id: string;
@@ -43,4 +48,5 @@ export interface Order {
   updated_at: string;
   packages: OrderPackage[];
   station_statuses: StationStatusEntry[];
+  barcodes: OrderBarcode[];
 }

@@ -8,7 +8,7 @@ const TRANSITIONS: StationStatus[] = ["PENDING", "PROCESSED", "ERROR"];
 interface Props {
   stations: StationStatusEntry[];
   busy: boolean;
-  onSetStatus: (stationId: number, status: StationStatus) => Promise<void>;
+  onSetStatus: (stationId: number, status: StationStatus) => Promise<boolean>;
 }
 
 export function StationStatusPanel({ stations, busy, onSetStatus }: Props) {

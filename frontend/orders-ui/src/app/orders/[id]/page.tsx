@@ -3,12 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { addPackage, deleteOrder, getOrder, updateOrderStatus, updateStationStatus } from "@/lib/api";
+import {
+  addPackage,
+  deleteOrder,
+  getOrder,
+  registerBarcode,
+  updateOrderStatus,
+  updateStationStatus,
+} from "@/lib/api";
 import type { AddPackageInput } from "@/lib/api";
 import type { Order, OrderStatus, StationStatus } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StationStatusPanel } from "@/components/StationStatusPanel";
 import { OrderPackagesPanel } from "@/components/OrderPackagesPanel";
+import { OrderBarcodesPanel } from "@/components/OrderBarcodesPanel";
 
 const ORDER_STATUSES: OrderStatus[] = ["CREATED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
@@ -38,14 +46,19 @@ export default function OrderDetailPage() {
     };
   }, [id]);
 
-  const guarded = async (action: () => Promise<unknown>) => {
+  // Returns whether action() succeeded, so callers (e.g. form submit
+  // handlers) can tell a real failure apart from success instead of
+  // assuming success just because nothing threw back out to them.
+  const guarded = async (action: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
       await action();
       await refresh();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -119,6 +132,12 @@ export default function OrderDetailPage() {
             packages={order.packages}
             busy={busy}
             onAdd={(input: AddPackageInput) => guarded(() => addPackage(order.order_id, input))}
+          />
+
+          <OrderBarcodesPanel
+            barcodes={order.barcodes}
+            busy={busy}
+            onRegister={(barcode) => guarded(() => registerBarcode(order.order_id, barcode))}
           />
         </>
       )}

@@ -7,7 +7,7 @@ import { StatusBadge } from "./StatusBadge";
 interface Props {
   orders: Order[];
   busy: boolean;
-  onDelete: (orderId: string) => Promise<void>;
+  onDelete: (orderId: string) => Promise<boolean>;
 }
 
 export function OrdersTable({ orders, busy, onDelete }: Props) {

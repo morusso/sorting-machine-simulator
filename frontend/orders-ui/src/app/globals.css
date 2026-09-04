@@ -148,6 +148,9 @@ th {
 }
 
 .error-banner {
+  position: sticky;
+  top: 8px;
+  z-index: 10;
   background: #2a1414;
   border: 1px solid var(--red);
   color: #ffb3b3;

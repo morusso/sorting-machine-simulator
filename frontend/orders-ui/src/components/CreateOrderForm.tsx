@@ -4,7 +4,7 @@ import { useState } from "react";
 
 interface Props {
   busy: boolean;
-  onCreate: (customerName: string, destinationAddress: string) => Promise<void>;
+  onCreate: (customerName: string, destinationAddress: string) => Promise<boolean>;
 }
 
 export function CreateOrderForm({ busy, onCreate }: Props) {
@@ -12,9 +12,12 @@ export function CreateOrderForm({ busy, onCreate }: Props) {
   const [destinationAddress, setDestinationAddress] = useState("");
 
   const submit = async () => {
-    await onCreate(customerName, destinationAddress);
-    setCustomerName("");
-    setDestinationAddress("");
+    // Only clear the fields on success — otherwise a failed create looks
+    // like it went through.
+    if (await onCreate(customerName, destinationAddress)) {
+      setCustomerName("");
+      setDestinationAddress("");
+    }
   };
 
   return (
