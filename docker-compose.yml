@@ -41,5 +41,18 @@ services:
     depends_on:
       - backend
 
+  orders-ui:
+    build: ./frontend/orders-ui
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/orders-ui:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
