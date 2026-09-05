@@ -98,6 +98,28 @@ export interface SensorState {
   triggered: boolean;
 }
 
+// Mirrors app.storage.models.OrderStatus (backend/app/storage/models.py) —
+// the order storage service's own lifecycle, served from /api/orders.
+export type OrderStatus = "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export interface OrderSummary {
+  order_id: string;
+  customer_name: string | null;
+  destination_address: string | null;
+  status: OrderStatus;
+  barcodes: { barcode: string; registered_at: string }[];
+}
+
+// A barcode registered on some order (see OrderSummary.barcodes), flattened
+// with that order's details for display next to a barcode picker.
+export interface OrderBarcodeOption {
+  barcode: string;
+  order_id: string;
+  customer_name: string | null;
+  destination_address: string | null;
+  order_status: OrderStatus;
+}
+
 export interface SimulationSnapshot {
   type: "simulation_state";
   timestamp: number;

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createPackage,
+  listOrderBarcodes,
   pauseSimulation,
   resetSimulation,
   resumeSimulation,
@@ -11,9 +12,10 @@ import {
   startSimulation,
   stopSimulation,
 } from "@/lib/api";
+import type { OrderBarcodeOption } from "@/lib/types";
 import { useSimulationSocket } from "@/hooks/useSimulationSocket";
 import { ControlPanel } from "@/components/ControlPanel";
-import { CreatePackageForm } from "@/components/CreatePackageForm";
+import { OrderBarcodePicker } from "@/components/OrderBarcodePicker";
 import { ConveyorTrack } from "@/components/ConveyorTrack";
 import { EncoderSensorPanel } from "@/components/EncoderSensorPanel";
 import { GatesPanel } from "@/components/GatesPanel";
@@ -25,14 +27,35 @@ export default function Home() {
   const { snapshot, status } = useSimulationSocket();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderBarcodes, setOrderBarcodes] = useState<OrderBarcodeOption[]>([]);
 
-  const guarded = async (action: () => Promise<unknown>) => {
+  useEffect(() => {
+    let cancelled = false;
+    listOrderBarcodes().then(
+      (data) => {
+        if (!cancelled) setOrderBarcodes(data);
+      },
+      (err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Returns whether action() succeeded, so callers (e.g. form submit
+  // handlers) can tell a real failure apart from success instead of
+  // assuming success just because nothing threw back out to them.
+  const guarded = async (action: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
       await action();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -72,7 +95,11 @@ export default function Home() {
         onSetSpeedMultiplier={(multiplier) => guarded(() => setSimulationSpeed(multiplier))}
       />
 
-      <CreatePackageForm busy={busy} onCreate={(barcode) => guarded(() => createPackage(barcode))} />
+      <OrderBarcodePicker
+        options={orderBarcodes}
+        busy={busy}
+        onCreate={(barcode) => guarded(() => createPackage(barcode))}
+      />
 
       {snapshot ? (
         <>

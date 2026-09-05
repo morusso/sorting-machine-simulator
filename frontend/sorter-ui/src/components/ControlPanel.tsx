@@ -11,13 +11,13 @@ interface Props {
   targetSpeed: number;
   speedMultiplier: number;
   busy: boolean;
-  onStart: () => Promise<void>;
-  onPause: () => Promise<void>;
-  onResume: () => Promise<void>;
-  onStop: () => Promise<void>;
-  onReset: () => Promise<void>;
-  onSetSpeed: (speed: number) => Promise<void>;
-  onSetSpeedMultiplier: (multiplier: number) => Promise<void>;
+  onStart: () => Promise<boolean>;
+  onPause: () => Promise<boolean>;
+  onResume: () => Promise<boolean>;
+  onStop: () => Promise<boolean>;
+  onReset: () => Promise<boolean>;
+  onSetSpeed: (speed: number) => Promise<boolean>;
+  onSetSpeedMultiplier: (multiplier: number) => Promise<boolean>;
 }
 
 export function ControlPanel({

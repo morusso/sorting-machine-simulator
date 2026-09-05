@@ -58,7 +58,7 @@ describe("simulation lifecycle controls", () => {
   });
 
   it("resets the simulation, clearing packages and statistics", () => {
-    cy.get("[data-cy=demo-barcode-5901234567890]").click();
+    cy.createPackage("5901234567890");
     cy.get("[data-cy=stat-total]").should("have.text", "1");
 
     cy.get("[data-cy=start-button]").click();
