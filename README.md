@@ -2,6 +2,8 @@
 
 A software prototype of an industrial sorting machine that simulates all key mechanical and electronic components before the physical device is built.
 
+> **Looking for where the project actually stands today?** See [40. Current Implementation Status](#40-current-implementation-status). Everything else in this document is the original design/vision spec and is only updated when the target design itself changes.
+
 ## Table of Contents
 
 - [1. Project Goal](#1-project-goal)
@@ -46,6 +48,7 @@ A software prototype of an industrial sorting machine that simulates all key mec
 - [37. Success Criteria](#37-success-criteria)
 - [38. Key Architectural Decisions](#38-key-architectural-decisions)
 - [39. Summary](#39-summary)
+- [40. Current Implementation Status](#40-current-implementation-status)
 
 ---
 
@@ -478,15 +481,18 @@ The system should have a visualization panel showing:
 
 | Layer | Technology                                    |
 |---|-----------------------------------------------|
-| Backend | Python, FastAPI, Pydantic, asyncio, WebSocket |
+| Backend | Python, FastAPI, Pydantic, asyncio, WebSocket, SQLAlchemy (async) |
 | Database | PostgreSQL                                    |
-| Frontend | NextJs                                        |
+| Frontend | Next.js/React — `sorter-ui` (live machine HMI) and `orders-ui` (order storage management) |
+| Testing | pytest / pytest-asyncio / testcontainers (backend), Cypress (frontend e2e) |
 | Communication (current) | TCP/IP, WebSocket, REST API                   |
 | Communication (future) | Modbus TCP, PROFINET, EtherNet/IP             |
 
 The database may store: packages, codes, sorting results, gate configuration, events, errors, simulation history.
 
 ## 19. Project Structure
+
+> This block is the target layout from the original design. For the actual current tree, see [40. Current Implementation Status](#40-current-implementation-status).
 
 ```
 sorter-simulator/
@@ -511,10 +517,12 @@ sorter-simulator/
 │   │   │   ├── encoder/
 │   │   │   ├── sensors/
 │   │   │   └── gates/
+│   │   ├── storage/
 │   │   └── main.py
 │   └── tests/
 ├── frontend/
-│   └── sorter-ui/
+│   ├── sorter-ui/
+│   └── orders-ui/
 ├── simulator/
 │   ├── scanner_simulator/
 │   ├── conveyor_simulator/
@@ -522,6 +530,7 @@ sorter-simulator/
 │   ├── encoder_simulator/
 │   └── gate_simulator/
 ├── docker/
+├── docker-compose.yml
 ├── docs/
 └── README.md
 ```
@@ -817,18 +826,20 @@ graph TD
 
 The simulator project can be considered ready to begin hardware integration if:
 
-- [ ] 10,000+ packages can be simulated without critical errors
-- [ ] packages are correctly tracked
-- [ ] speed changes do not cause loss of synchronization
-- [ ] the scanner is replaceable without changes to the sorting logic
-- [ ] the gate is replaceable without changes to the controller
-- [ ] the encoder is replaceable without changes to the sorting algorithm
-- [ ] the gravity segment can be added/removed without changes to the controller logic
-- [ ] failures are correctly handled
-- [ ] all key events are logged
-- [ ] the system has automated tests
-- [ ] the simulation can run at accelerated speed
-- [ ] the HMI shows the machine state in real time
+- [ ] 10,000+ packages can be simulated without critical errors (not yet load-tested at this scale)
+- [x] packages are correctly tracked
+- [x] speed changes do not cause loss of synchronization
+- [x] the scanner is replaceable without changes to the sorting logic
+- [x] the gate is replaceable without changes to the controller
+- [x] the encoder is replaceable without changes to the sorting algorithm
+- [x] the gravity segment can be added/removed without changes to the controller logic
+- [x] failures are correctly handled
+- [x] all key events are logged
+- [x] the system has automated tests
+- [x] the simulation can run at accelerated speed
+- [x] the HMI shows the machine state in real time
+
+See [40. Current Implementation Status](#40-current-implementation-status) for what backs each checked item.
 
 ## 38. Key Architectural Decisions
 
@@ -858,3 +869,81 @@ graph TD
 Individual elements will then be progressively replaced with physical hardware. The key architectural goal is to keep identical interfaces between the simulator and the hardware — this also applies to gravity segments, which should look like any other transport segment from the controller's point of view.
 
 This allows the project to grow from a low-cost software environment into a real industrial machine without needing to rebuild the core system logic.
+
+## 40. Current Implementation Status
+
+Everything above is the original design document. This section tracks what is actually built, as of 2026-09-06 (branch `order-base`). Update it whenever a feature lands — the rest of the document should stay a stable reference for the target design.
+
+### 40.1 Simulation core (all simulated, no real hardware yet)
+
+Fully implemented per sections 4–14:
+
+- Driven conveyor segment (`app/domain/conveyor.py`) — speed, acceleration/braking, `set_speed`, emergency stop.
+- Gravity conveyor segment (`app/domain/gravity_conveyor.py`) — incline/friction acceleration model, per-package physics, and segments are chained together (driven → gravity) into one logical route.
+- Scanner (`app/devices/scanner/simulated_scanner.py`) — `CODE_DETECTED`/`CODE_NOT_FOUND`, modeled read delay.
+- Encoder (`app/devices/encoder/simulated_encoder.py`) and sensors (`app/devices/sensors/simulated_sensor.py`), both exposed in the HMI (`EncoderSensorPanel.tsx`).
+- Gates (`app/devices/gates/simulated_gate.py`) with the OPENING/OPEN/CLOSING/CLOSED state machine and gate ETA calculation.
+- `Controller` (`app/controllers/controller.py`) — identification, routing, duplicate-scan/unknown-barcode/error handling.
+- `SimulationEngine` + `Clock` (`app/simulation/engine.py`, `clock.py`) — START/PAUSE/RESUME/STOP/RESET, virtual time with a speed multiplier (not just the x1/x2/x10/x100 presets — any positive multiplier).
+- All device interfaces (`app/domain/*`) have a `Simulated*` implementation only — no real/TCP/PLC-backed implementation exists yet (section 15/16/27 stages 2–5 are not started).
+
+### 40.1a Gate opening/closing logic
+
+Implemented in `Controller.update_package_position()` (`app/controllers/controller.py`), driven purely by measured position (section 14), not timers:
+
+- Each gate has a configured `gate_lead_distances[gate_id]` (how far *before* the gate's position to trigger `open()`, so the gate has finished opening — `GATE_OPEN_TIME_MS` — by the time the package arrives) and `gate_clear_distances[gate_id]` (how far *past* the gate a package must travel before it's considered clear). Both are computed in `SortingLine.__init__`: lead distance is `segment_max_speed * (GATE_OPEN_TIME_MS / 1000)`, clear distance is a flat 0.5 m for every gate.
+- An `ASSIGNED` package that reaches `gate_position - gate_lead_distances[gate_id]` triggers `gates[gate_id].open()` and moves to `WAITING_FOR_GATE`. If the gate can't open (e.g. stuck `ERROR`, see `GATE_ERROR`), the package is marked `ERROR` instead and stays on the belt.
+- A `WAITING_FOR_GATE` package that reaches the gate's exact position is marked `SORTED`, and the gate is scheduled to close once that same package passes `gate_position + gate_clear_distances[gate_id]` (`_close_gate_if_clear()`) — so the gate doesn't shut before the package it just let through has actually cleared it.
+- Which gate a package is assigned to in the first place is decided earlier, at scan time, by `Controller.handle_scan_result()` — either from the static `routing_table`, or overridden per-barcode by the order storage service (see 40.4).
+- All of this is skipped once the controller is in `safe_mode` (`EMERGENCY_STOP`, section 26) — no gate opens or closes until a reset.
+- `Controller.estimate_gate_eta()` separately computes an ETA to the destination gate (for the HMI's ETA column) using the same constant-speed distance/speed model as `calculate_arrival_time()`, recalculated from the package's *current* position/speed rather than scheduled once.
+
+### 40.2 Error handling & safety (section 25–26)
+
+All 12 error codes from the table in section 25 are implemented and covered by tests (`UNKNOWN_BARCODE`, `CODE_NOT_FOUND`, `DUPLICATE_SCAN`, `PACKAGE_LOST`, `GATE_ERROR`, `SENSOR_ERROR`, `ENCODER_ERROR`, `CONVEYOR_STOPPED`, `GRAVITY_SEGMENT_STALL`, `GRAVITY_SEGMENT_JAM`, `COMMUNICATION_ERROR`, `TIMEOUT`). `EMERGENCY_STOP` is wired end-to-end (conveyor, gates, controller safe mode) behind `POST /api/simulation/emergency_stop`, recoverable only via reset.
+
+### 40.3 REST API & WebSocket (sections 30–31)
+
+Beyond the example table in section 30, the live simulation API (`app/api/routes.py`) also has:
+
+| Endpoint | Method | Notes |
+|---|---|---|
+| `/api/simulation/pause`, `/resume` | `POST` | not in the original example |
+| `/api/simulation/emergency_stop` | `POST` | section 26 |
+| `/api/simulation/speed` | `POST` | virtual-time multiplier |
+| `/api/statistics` | `GET` | section 34 |
+| `/api/events` | `GET` | section 24 event log |
+
+The WebSocket broadcast (`app/api/websocket.py`) matches the shape in section 31.
+
+### 40.4 Order storage service (not in the original design doc)
+
+A second, independent capability was added on top of the live simulation: a **persisted order/package storage service**, backed by PostgreSQL via async SQLAlchemy (`app/storage/`), exposed at `/api/orders/*` (`app/api/orders.py`). This is durable business data (which orders exist, their packages, per-station processing status, registered barcodes) — distinct from the in-memory `Package` objects tracked while physically on the conveyor.
+
+- Orders: create/list/get/delete, status lifecycle (`CREATED`/`IN_PROGRESS`/`COMPLETED`/`CANCELLED`).
+- Packages attached to an order, with an optional link back to the live `package_id`.
+- Per-order station tracking against a fixed set of stations (`STATIONS = (1, 2, 3)`), each `PENDING`/`PROCESSED`/`ERROR`.
+- Barcode registry: a barcode can be pre-registered to an order ahead of any physical package, and looked up via `GET /api/orders/by-barcode/{barcode}`.
+- **Order/station-driven routing**: `app/storage/routing.py`'s `OrderGateResolver` resolves a scanned barcode's gate from its order's station progress (gate 1 → 2 → 3 as stations 1/2 are processed, forced `REJECTED` once every station is done), and overrides the static `routing_table` via `Controller.handle_scan_result`'s `gate_override` parameter. Barcodes with no matching order still fall back to `routing_table` unchanged.
+
+### 40.5 Frontends
+
+Two separate Next.js/React apps, both wired to `NEXT_PUBLIC_API_URL`:
+
+- **`frontend/sorter-ui`** — the live-machine HMI from section 17: conveyor track visualization, control panel (start/pause/resume/stop/reset/emergency stop, speed controls), gates panel, gravity segment panel, encoder/sensor panel, statistics panel, packages table, plus an order-barcode picker for creating packages from a registered order barcode instead of a raw manual barcode. Covered by Cypress e2e specs (`cypress/e2e/`): dashboard, full sort flow, simulation lifecycle, simulation speed, conveyor speed, gravity segment, encoder/sensors.
+- **`frontend/orders-ui`** — a separate Next.js app dedicated to managing orders, independent of the sorting-line HMI (own port, `3001` in `docker-compose.yml`; it only talks to `/api/orders/*`, never to the live simulation or its WebSocket). Pages:
+  - `/` — list every order (`OrdersTable`), create a new one (`CreateOrderForm`: customer name + destination address), delete one, or jump straight to an order via `FindByBarcodeForm` (looks it up by a registered barcode through `GET /api/orders/by-barcode/{barcode}`).
+  - `/orders/[id]` — one order's detail page: change its status (`CREATED`/`IN_PROGRESS`/`COMPLETED`/`CANCELLED`), delete it, `StationStatusPanel` to set each station's `PENDING`/`PROCESSED`/`ERROR` (this is what drives the gate-routing decision described in 40.4), `OrderPackagesPanel` to attach package records, and `OrderBarcodesPanel` to register barcodes ahead of a physical package.
+
+  In other words: `sorter-ui` operates the running machine, `orders-ui` is the back-office tool for setting up and tracking the orders that machine routes packages for.
+
+### 40.6 Testing (section 23)
+
+Backend: pytest + pytest-asyncio across `backend/tests/` (clock, engine, conveyor, gravity conveyor, controller, sorting line, statistics, simulated devices, scenarios, REST API, orders API, order routing) plus `testcontainers[postgres]` for real-Postgres integration tests (order storage/routing tests spin up a real database rather than mocking it). Frontend: Cypress e2e for `sorter-ui` (listed above).
+
+### 40.7 Known gaps vs. the design doc
+
+- No load testing yet at the 10,000–100,000 package scale from sections 33/37.
+- No real hardware/PLC integration (sections 15, 16, 27 stages 2–5, 35) — everything is still `Simulated*`.
+- `docs/` is currently empty (`.gitkeep` only) — no additional design docs beyond this README yet.
+- `orders-ui` has no automated test coverage yet (unlike `sorter-ui`'s Cypress suite).
