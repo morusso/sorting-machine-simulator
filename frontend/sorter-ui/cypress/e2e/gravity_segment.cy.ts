@@ -8,8 +8,7 @@ describe("gravity segment buffer", () => {
     // An unroutable barcode means the package is never removed by a gate,
     // so it rides the driven segment all the way to its end (20m at the
     // default 1.0 m/s belt speed — this genuinely takes ~20s).
-    cy.get("[data-cy=barcode-input]").type("0000000000000");
-    cy.get("[data-cy=create-package-button]").click();
+    cy.createPackage("0000000000000");
     cy.get("[data-cy=start-button]").click();
 
     cy.get("[data-cy=package-status]", { timeout: 5000 }).first().should("have.text", "REJECTED");

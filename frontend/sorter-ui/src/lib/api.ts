@@ -1,5 +1,7 @@
 import type {
   ConveyorStatus,
+  OrderBarcodeOption,
+  OrderSummary,
   Package,
   SimulationSpeed,
   SimulationStatus,
@@ -72,4 +74,21 @@ export function setSimulationSpeed(speedMultiplier: number): Promise<SimulationS
 
 export function getStatistics(): Promise<Statistics> {
   return request<Statistics>("/api/statistics");
+}
+
+// Reads from the order storage service (backend/app/api/orders.py), not
+// the simulation itself — every barcode registered on any order,
+// flattened with that order's details so a picker can show both barcode
+// and its data in one place (see components/OrderBarcodePicker.tsx).
+export async function listOrderBarcodes(): Promise<OrderBarcodeOption[]> {
+  const orders = await request<OrderSummary[]>("/api/orders");
+  return orders.flatMap((order) =>
+    order.barcodes.map((entry) => ({
+      barcode: entry.barcode,
+      order_id: order.order_id,
+      customer_name: order.customer_name,
+      destination_address: order.destination_address,
+      order_status: order.status,
+    })),
+  );
 }

@@ -2,6 +2,9 @@ fastapi
 pydantic
 uvicorn[standard]
 websockets
+sqlalchemy[asyncio]
+asyncpg
 pytest
 pytest-asyncio
 httpx
+testcontainers[postgres]

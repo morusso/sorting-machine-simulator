@@ -1,6 +1,6 @@
 import pytest
 
-from app.controllers.controller import Controller
+from app.controllers.controller import Controller, GateOverride
 from app.devices.gates.simulated_gate import SimulatedGate
 from app.domain.conveyor import DrivenConveyorSegment
 from app.domain.gate import GateState
@@ -78,6 +78,39 @@ def test_handle_scan_result_code_not_found_marks_error():
     )
     package = controller.handle_scan_result(result)
     assert package.status == PackageStatus.ERROR
+
+
+def test_handle_scan_result_gate_override_wins_over_routing_table():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    result = ScanResult(
+        event=ScanEvent.CODE_DETECTED,
+        scan_id="SCAN-000001",
+        package_id="PKG-1",
+        code="5901234567890",  # routing_table maps this to gate 1
+        position=1.0,
+        confidence=0.98,
+    )
+    package = controller.handle_scan_result(result, gate_override=GateOverride(gate_id=3))
+    assert package.destination == 3
+    assert package.status == PackageStatus.ASSIGNED
+
+
+def test_handle_scan_result_gate_override_none_forces_rejected():
+    controller, _, _ = make_controller()
+    controller.register_package(make_package())
+    result = ScanResult(
+        event=ScanEvent.CODE_DETECTED,
+        scan_id="SCAN-000001",
+        package_id="PKG-1",
+        code="5901234567890",  # routing_table would otherwise assign gate 1
+        position=1.0,
+        confidence=0.98,
+    )
+    package = controller.handle_scan_result(result, gate_override=GateOverride(gate_id=None))
+    assert package.destination is None
+    assert package.status == PackageStatus.REJECTED
+    assert controller.statistics.rejected_packages == 1
 
 
 def test_handle_scan_result_unknown_package_raises():

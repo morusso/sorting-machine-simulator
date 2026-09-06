@@ -7,7 +7,7 @@ describe("full package sorting flow", () => {
   it("carries a package from creation through scanning to a sorted, reclosed gate", () => {
     // "5901234567890" routes to gate 1 (see DEFAULT_ROUTING_TABLE in
     // app/simulation/sorting_line.py).
-    cy.get("[data-cy=demo-barcode-5901234567890]").click();
+    cy.createPackage("5901234567890");
     cy.get("[data-cy=package-status]").first().should("have.text", "IN_TRANSIT");
 
     cy.get("[data-cy=start-button]").click();
@@ -22,8 +22,7 @@ describe("full package sorting flow", () => {
   });
 
   it("rejects a package whose barcode has no routing entry", () => {
-    cy.get("[data-cy=barcode-input]").type("0000000000000");
-    cy.get("[data-cy=create-package-button]").click();
+    cy.createPackage("0000000000000");
     cy.get("[data-cy=start-button]").click();
 
     cy.get("[data-cy=package-status]", { timeout: 5000 }).first().should("have.text", "REJECTED");
