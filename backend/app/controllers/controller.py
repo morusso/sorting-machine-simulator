@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from app.domain.conveyor import ConveyorSegment
 from app.domain.gate import Gate
 from app.domain.package import Package, PackageStatus
@@ -22,6 +24,20 @@ from app.simulation.events import (
     UnknownCodeScanned,
 )
 from app.simulation.statistics import Statistics
+
+
+@dataclass(frozen=True)
+class GateOverride:
+    """Forces handle_scan_result()'s gate decision instead of consulting
+    routing_table (see app.storage.routing, resolved from the barcode's
+    order and how many of its stations have been processed).
+
+    Attributes:
+        gate_id: Gate to route to, or None to force REJECTED (e.g. every
+            station on the order has already been processed).
+    """
+
+    gate_id: int | None
 
 
 class Controller:
@@ -116,19 +132,27 @@ class Controller:
         self.packages[package.package_id] = package
         self.events.publish(PackageCreated(timestamp=self.clock.now(), package_id=package.package_id))
 
-    def handle_scan_result(self, result: ScanResult) -> Package:
+    def handle_scan_result(self, result: ScanResult, gate_override: GateOverride | None = None) -> Package:
         """Apply a scan outcome to the corresponding tracked package.
 
         A CODE_NOT_FOUND result marks the package ERROR (see README
         section 25). A CODE_DETECTED result records the barcode and either
-        assigns a destination gate from routing_table (status ASSIGNED) or,
-        if the barcode has no routing entry, marks the package REJECTED
-        (UNKNOWN_BARCODE). A package that has already been scanned once
-        (i.e. this is not its first scan result) is left untouched and
-        instead reported as a DUPLICATE_SCAN (see README section 25).
+        assigns a destination gate (status ASSIGNED) or, if none applies,
+        marks the package REJECTED (UNKNOWN_BARCODE). The gate itself
+        comes from gate_override.gate_id if given, otherwise from
+        routing_table — gate_override lets a caller with more specific
+        knowledge (see app.storage.routing, SortingLine._scan_arrived_packages())
+        override routing_table's decision, including forcing REJECTED via
+        GateOverride(gate_id=None), without this method needing to know
+        anything about orders/stations itself. A package that has already
+        been scanned once (i.e. this is not its first scan result) is left
+        untouched and instead reported as a DUPLICATE_SCAN (see README
+        section 25).
 
         Args:
             result: The scan outcome to apply.
+            gate_override: Forces the gate decision instead of consulting
+                routing_table. Defaults to None (use routing_table).
 
         Returns:
             The updated package.
@@ -152,7 +176,7 @@ class Controller:
         package.status = PackageStatus.SCANNED
         self.events.publish(CodeDetected(timestamp=now, package_id=result.package_id, code=result.code))
 
-        gate_id = self.routing_table.get(result.code)
+        gate_id = gate_override.gate_id if gate_override is not None else self.routing_table.get(result.code)
         if gate_id is None:
             package.status = PackageStatus.REJECTED
             self.events.publish(UnknownCodeScanned(timestamp=now, package_id=result.package_id, code=result.code))

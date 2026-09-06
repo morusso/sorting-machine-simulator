@@ -4,6 +4,7 @@ from app.domain.gate import GateState
 from app.domain.package import PackageStatus
 from app.simulation.sorting_line import DEFAULT_SCANNER_POSITION, SortingLine
 from app.simulation.sorting_line_config import GravitySegmentConfig, SortingLineConfig
+from app.storage.routing import OrderGateResolution
 
 
 @pytest.mark.asyncio
@@ -679,3 +680,68 @@ async def test_reset_clears_emergency_stop():
     assert line.emergency_stopped is False
     assert line.controller.safe_mode is False
     assert await line.gates[1].get_state() == GateState.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_order_gate_resolver_overrides_routing_table():
+    # "5901234567890" routes to gate 1 via routing_table (see
+    # SortingLineConfig's DEFAULT_ROUTING_TABLE) — an order_gate_resolver
+    # reporting the barcode's order as found should override that.
+    async def resolver(barcode: str) -> OrderGateResolution:
+        return OrderGateResolution(order_found=True, gate_id=3)
+
+    line = SortingLine(order_gate_resolver=resolver)
+    package = await line.create_package("5901234567890")
+    line.engine.start()
+
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)
+
+    updated = line.controller.packages[package.package_id]
+    assert updated.destination == 3
+    assert updated.status == PackageStatus.ASSIGNED
+
+
+@pytest.mark.asyncio
+async def test_order_gate_resolver_forces_rejected_when_no_gate():
+    async def resolver(barcode: str) -> OrderGateResolution:
+        return OrderGateResolution(order_found=True, gate_id=None)
+
+    line = SortingLine(order_gate_resolver=resolver)
+    package = await line.create_package("5901234567890")
+    line.engine.start()
+
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)
+
+    updated = line.controller.packages[package.package_id]
+    assert updated.destination is None
+    assert updated.status == PackageStatus.REJECTED
+
+
+@pytest.mark.asyncio
+async def test_order_gate_resolver_falls_back_to_routing_table_when_barcode_unregistered():
+    async def resolver(barcode: str) -> OrderGateResolution:
+        return OrderGateResolution(order_found=False)
+
+    line = SortingLine(order_gate_resolver=resolver)
+    package = await line.create_package("5901234567890")  # routing_table maps this to gate 1
+    line.engine.start()
+
+    await line.tick(DEFAULT_SCANNER_POSITION / line.segment.speed + 0.1)
+    await line.tick(line.scanner_detection_delay_s + 0.1)
+
+    updated = line.controller.packages[package.package_id]
+    assert updated.destination == 1
+    assert updated.status == PackageStatus.ASSIGNED
+
+
+@pytest.mark.asyncio
+async def test_reset_preserves_the_order_gate_resolver():
+    async def resolver(barcode: str) -> OrderGateResolution:
+        return OrderGateResolution(order_found=True, gate_id=2)
+
+    line = SortingLine(order_gate_resolver=resolver)
+    line.reset()
+
+    assert line.order_gate_resolver is resolver

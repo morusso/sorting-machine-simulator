@@ -1,12 +1,14 @@
-from app.controllers.controller import Controller
+from app.controllers.controller import Controller, GateOverride
 from app.devices.simulated_device_factory import SimulatedDeviceFactory
 from app.domain.device_factory import DeviceFactory
 from app.domain.gate import Gate
 from app.domain.gravity_conveyor import GravityConveyorSegment
 from app.domain.package import Package, PackageStatus
+from app.domain.scanner import ScanEvent, ScanResult
 from app.simulation.clock import Clock
 from app.simulation.engine import EngineState, SimulationEngine
 from app.simulation.sorting_line_config import DEFAULT_SCANNER_POSITION, SortingLineConfig  # noqa: F401 (re-exported)
+from app.storage.routing import OrderGateResolver
 
 GATE_OPEN_TIME_MS = 300.0
 GATE_CLOSE_TIME_MS = 300.0
@@ -61,6 +63,7 @@ class SortingLine:
         self,
         config: SortingLineConfig | None = None,
         device_factory: DeviceFactory | None = None,
+        order_gate_resolver: OrderGateResolver | None = None,
     ):
         """Build a fresh sorting line: driven + gravity segments, gates, engine STOPPED.
 
@@ -75,9 +78,16 @@ class SortingLine:
                 if not given — inject a factory backed by real hardware
                 (see README section 28) to drive real equipment without
                 changing this class.
+            order_gate_resolver: Resolves a scanned barcode's gate from the
+                order storage service (see app.storage.routing), overriding
+                controller.routing_table for any barcode registered to an
+                order (see _scan_arrived_packages()). Defaults to None —
+                every package is then routed purely from routing_table, as
+                before this existed.
         """
         self.config = config if config is not None else SortingLineConfig()
         self.device_factory = device_factory if device_factory is not None else SimulatedDeviceFactory()
+        self.order_gate_resolver = order_gate_resolver
         config = self.config
 
         self.clock = Clock()
@@ -212,7 +222,28 @@ class SortingLine:
             position = await self.segment.get_package_position(package_id)
             result = await self.scanner.scan(package_id, position)
             del self._unscanned_barcodes[package_id]
-            self.controller.handle_scan_result(result)
+            gate_override = await self._resolve_order_gate_override(result)
+            self.controller.handle_scan_result(result, gate_override=gate_override)
+
+    async def _resolve_order_gate_override(self, result: ScanResult) -> GateOverride | None:
+        """Resolve a CODE_DETECTED scan result's gate from the order storage
+        service (see app.storage.routing.OrderGateResolver), so it can
+        override controller.routing_table's decision.
+
+        Returns None (no override — controller falls back to
+        routing_table) whenever there's no order_gate_resolver configured,
+        the scan didn't detect a code at all, or the code isn't registered
+        to any order.
+
+        Args:
+            result: The scan outcome just read (see _scan_arrived_packages()).
+        """
+        if self.order_gate_resolver is None or result.event != ScanEvent.CODE_DETECTED:
+            return None
+        resolution = await self.order_gate_resolver(result.code)
+        if not resolution.order_found:
+            return None
+        return GateOverride(gate_id=resolution.gate_id)
 
     async def _position_from_encoder(self, package_id: str) -> float:
         """Derive a driven-segment package's position from encoder pulses.
@@ -505,4 +536,4 @@ class SortingLine:
         configuration: a new clock/engine, an empty conveyor, and a new
         gate set and controller (so no packages or gate state survive).
         """
-        self.__init__(config=self.config, device_factory=self.device_factory)
+        self.__init__(config=self.config, device_factory=self.device_factory, order_gate_resolver=self.order_gate_resolver)
